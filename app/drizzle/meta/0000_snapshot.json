@@ -1,11 +1,11 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3dfa8f51-b4e3-465d-93f4-928d71e244c1",
+  "id": "b386d8ac-0665-4d0b-9fb9-7a886a1cc5ba",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
-    "todos": {
-      "name": "todos",
+    "assets": {
+      "name": "assets",
       "columns": {
         "id": {
           "name": "id",
@@ -14,9 +14,114 @@
           "notNull": true,
           "autoincrement": true
         },
-        "title": {
-          "name": "title",
+        "name": {
+          "name": "name",
           "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "location": {
+          "name": "location",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'operational'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "(unixepoch())"
+        }
+      },
+      "indexes": {
+        "idx_assets_status": {
+          "name": "idx_assets_status",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        },
+        "idx_assets_category": {
+          "name": "idx_assets_category",
+          "columns": [
+            "category"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "maintenance_records": {
+      "name": "maintenance_records",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "technician": {
+          "name": "technician",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cost_cents": {
+          "name": "cost_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'scheduled'"
+        },
+        "performed_at": {
+          "name": "performed_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -30,8 +135,44 @@
           "default": "(unixepoch())"
         }
       },
-      "indexes": {},
-      "foreignKeys": {},
+      "indexes": {
+        "idx_maintenance_asset_id": {
+          "name": "idx_maintenance_asset_id",
+          "columns": [
+            "asset_id"
+          ],
+          "isUnique": false
+        },
+        "idx_maintenance_performed_at": {
+          "name": "idx_maintenance_performed_at",
+          "columns": [
+            "performed_at"
+          ],
+          "isUnique": false
+        },
+        "idx_maintenance_status": {
+          "name": "idx_maintenance_status",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "maintenance_records_asset_id_assets_id_fk": {
+          "name": "maintenance_records_asset_id_assets_id_fk",
+          "tableFrom": "maintenance_records",
+          "tableTo": "assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}

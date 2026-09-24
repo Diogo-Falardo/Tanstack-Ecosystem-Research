@@ -13,7 +13,7 @@
 ## Analyze these
 - app/src/db/schema.ts
 
-No feature in this repo has server/function code written yet, so there is no existing file to copy — this pair sets the pattern every later feature follows. Split each feature into: `*.server.ts` — a class (`Assets`, `MaintenanceRecords`; PascalCase, plural, matching the file) with static methods holding all Drizzle/business logic, taking explicit args only (no session or cookie reads inside the class); `*.function.ts` — thin `createServerFn` wrappers that validate input, resolve the caller's role, and delegate to exactly one class method each, with no business logic of their own.
+No feature in this repo has server/function code written yet, so there is no existing file to copy — this pair sets the pattern every later feature follows. Split each feature into: `*.server.ts` — a class (`Assets`, `MaintenanceRecords`; PascalCase, plural, matching the file) with static methods holding all Drizzle/business logic, taking explicit args only (no session or cookie reads inside the class); `*.function.ts` — thin `createServerFn` wrappers that validate input, resolve the caller's role, and delegate to exactly on class method each, with no business logic of their own.
 
 ## What we currently need
 

@@ -10,33 +10,43 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MaintenanceRecordsIndexRouteImport } from './routes/maintenance-records/index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MaintenanceRecordsIndexRoute = MaintenanceRecordsIndexRouteImport.update({
+  id: '/maintenance-records/',
+  path: '/maintenance-records/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/maintenance-records/': typeof MaintenanceRecordsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/maintenance-records': typeof MaintenanceRecordsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/maintenance-records/': typeof MaintenanceRecordsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/maintenance-records/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/maintenance-records'
+  id: '__root__' | '/' | '/maintenance-records/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  MaintenanceRecordsIndexRoute: typeof MaintenanceRecordsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +58,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/maintenance-records/': {
+      id: '/maintenance-records/'
+      path: '/maintenance-records'
+      fullPath: '/maintenance-records/'
+      preLoaderRoute: typeof MaintenanceRecordsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  MaintenanceRecordsIndexRoute: MaintenanceRecordsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -29,6 +29,7 @@
     "@tanstack/react-router-ssr-query": "^1.167.3",
     "@tanstack/react-start": "latest",
     "@tanstack/react-table": "^9.2.4",
+    "@tanstack/react-virtual": "^3.14.13",
     "better-sqlite3": "^12.6.2",
     "drizzle-kit": "^0.31.9",
     "drizzle-orm": "^0.45.1",

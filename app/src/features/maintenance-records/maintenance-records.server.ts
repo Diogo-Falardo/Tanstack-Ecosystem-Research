@@ -1,4 +1,4 @@
-import { and, count, eq } from 'drizzle-orm'
+import { and, asc, count, desc, eq } from 'drizzle-orm'
 import { db } from '#/db'
 import { maintenanceRecords } from '#/db/schema'
 import { selectMaintenanceRecordSchema } from './maintenance-records.schemas'
@@ -9,6 +9,12 @@ import type {
   MaintenanceRecord,
   UpdateMaintenanceRecordInput,
 } from './maintenance-records.types'
+
+const sortColumns = {
+  status: maintenanceRecords.status,
+  performedAt: maintenanceRecords.performedAt,
+  id: maintenanceRecords.id,
+} as const
 
 export class MaintenanceRecords {
   static async get(id: number): Promise<MaintenanceRecord> {
@@ -55,11 +61,16 @@ export class MaintenanceRecords {
         : undefined,
     )
 
+    const sortColumn = sortColumns[filters.sortBy ?? 'performedAt']
+    const orderBy =
+      filters.sortDir === 'desc' ? desc(sortColumn) : asc(sortColumn)
+
     const [rows, totalRow] = await Promise.all([
       db
         .select()
         .from(maintenanceRecords)
         .where(where)
+        .orderBy(orderBy)
         .limit(filters.pageSize)
         .offset(filters.page * filters.pageSize),
       db.select({ total: count() }).from(maintenanceRecords).where(where),

@@ -24,4 +24,6 @@ export const listMaintenanceRecordsInputSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(25),
   status: selectMaintenanceRecordSchema.shape.status.optional(),
   assetId: z.number().int().positive().optional(),
+  sortBy: z.enum(['status', 'performedAt', 'id']).optional(),
+  sortDir: z.enum(['asc', 'desc']).default('asc'),
 })

@@ -18,6 +18,10 @@ export const sfListAssets = createServerFn({ method: 'GET' })
   .validator(listAssetsInputSchema)
   .handler(async ({ data }) => Assets.list(data))
 
+export const sfListAssetOptions = createServerFn({ method: 'GET' })
+  .middleware([anyRole])
+  .handler(async () => Assets.options())
+
 export const sfCreateAsset = createServerFn({ method: 'POST' })
   .middleware([adminOnly])
   .validator(createAssetSchema)

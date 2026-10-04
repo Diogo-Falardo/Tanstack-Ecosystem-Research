@@ -10,43 +10,111 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MaintenanceRecordsRouteRouteImport } from './routes/maintenance-records/route'
+import { Route as AssetsNewRouteImport } from './routes/assets/new'
 import { Route as MaintenanceRecordsIndexRouteImport } from './routes/maintenance-records/index'
+import { Route as MaintenanceRecordsNewRouteImport } from './routes/maintenance-records/new'
+import { Route as AssetsIdEditRouteImport } from './routes/assets/$id.edit'
+import { Route as MaintenanceRecordsIdEditRouteImport } from './routes/maintenance-records/$id.edit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MaintenanceRecordsIndexRoute = MaintenanceRecordsIndexRouteImport.update({
-  id: '/maintenance-records/',
-  path: '/maintenance-records/',
+const MaintenanceRecordsRouteRoute = MaintenanceRecordsRouteRouteImport.update({
+  id: '/maintenance-records',
+  path: '/maintenance-records',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AssetsNewRoute = AssetsNewRouteImport.update({
+  id: '/assets/new',
+  path: '/assets/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MaintenanceRecordsIndexRoute = MaintenanceRecordsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => MaintenanceRecordsRouteRoute,
+} as any)
+const MaintenanceRecordsNewRoute = MaintenanceRecordsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => MaintenanceRecordsRouteRoute,
+} as any)
+const AssetsIdEditRoute = AssetsIdEditRouteImport.update({
+  id: '/assets/$id/edit',
+  path: '/assets/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MaintenanceRecordsIdEditRoute =
+  MaintenanceRecordsIdEditRouteImport.update({
+    id: '/$id/edit',
+    path: '/$id/edit',
+    getParentRoute: () => MaintenanceRecordsRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/maintenance-records': typeof MaintenanceRecordsRouteRouteWithChildren
+  '/assets/new': typeof AssetsNewRoute
+  '/maintenance-records/new': typeof MaintenanceRecordsNewRoute
   '/maintenance-records/': typeof MaintenanceRecordsIndexRoute
+  '/assets/$id/edit': typeof AssetsIdEditRoute
+  '/maintenance-records/$id/edit': typeof MaintenanceRecordsIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/assets/new': typeof AssetsNewRoute
+  '/maintenance-records/new': typeof MaintenanceRecordsNewRoute
   '/maintenance-records': typeof MaintenanceRecordsIndexRoute
+  '/assets/$id/edit': typeof AssetsIdEditRoute
+  '/maintenance-records/$id/edit': typeof MaintenanceRecordsIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/maintenance-records': typeof MaintenanceRecordsRouteRouteWithChildren
+  '/assets/new': typeof AssetsNewRoute
+  '/maintenance-records/new': typeof MaintenanceRecordsNewRoute
   '/maintenance-records/': typeof MaintenanceRecordsIndexRoute
+  '/assets/$id/edit': typeof AssetsIdEditRoute
+  '/maintenance-records/$id/edit': typeof MaintenanceRecordsIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/maintenance-records/'
+  fullPaths:
+    | '/'
+    | '/maintenance-records'
+    | '/assets/new'
+    | '/maintenance-records/new'
+    | '/maintenance-records/'
+    | '/assets/$id/edit'
+    | '/maintenance-records/$id/edit'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/maintenance-records'
-  id: '__root__' | '/' | '/maintenance-records/'
+  to:
+    | '/'
+    | '/assets/new'
+    | '/maintenance-records/new'
+    | '/maintenance-records'
+    | '/assets/$id/edit'
+    | '/maintenance-records/$id/edit'
+  id:
+    | '__root__'
+    | '/'
+    | '/maintenance-records'
+    | '/assets/new'
+    | '/maintenance-records/new'
+    | '/maintenance-records/'
+    | '/assets/$id/edit'
+    | '/maintenance-records/$id/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  MaintenanceRecordsIndexRoute: typeof MaintenanceRecordsIndexRoute
+  MaintenanceRecordsRouteRoute: typeof MaintenanceRecordsRouteRouteWithChildren
+  AssetsNewRoute: typeof AssetsNewRoute
+  AssetsIdEditRoute: typeof AssetsIdEditRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,19 +126,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/maintenance-records': {
+      id: '/maintenance-records'
+      path: '/maintenance-records'
+      fullPath: '/maintenance-records'
+      preLoaderRoute: typeof MaintenanceRecordsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/assets/new': {
+      id: '/assets/new'
+      path: '/assets/new'
+      fullPath: '/assets/new'
+      preLoaderRoute: typeof AssetsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/maintenance-records/': {
       id: '/maintenance-records/'
-      path: '/maintenance-records'
+      path: '/'
       fullPath: '/maintenance-records/'
       preLoaderRoute: typeof MaintenanceRecordsIndexRouteImport
+      parentRoute: typeof MaintenanceRecordsRouteRoute
+    }
+    '/maintenance-records/new': {
+      id: '/maintenance-records/new'
+      path: '/new'
+      fullPath: '/maintenance-records/new'
+      preLoaderRoute: typeof MaintenanceRecordsNewRouteImport
+      parentRoute: typeof MaintenanceRecordsRouteRoute
+    }
+    '/assets/$id/edit': {
+      id: '/assets/$id/edit'
+      path: '/assets/$id/edit'
+      fullPath: '/assets/$id/edit'
+      preLoaderRoute: typeof AssetsIdEditRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/maintenance-records/$id/edit': {
+      id: '/maintenance-records/$id/edit'
+      path: '/$id/edit'
+      fullPath: '/maintenance-records/$id/edit'
+      preLoaderRoute: typeof MaintenanceRecordsIdEditRouteImport
+      parentRoute: typeof MaintenanceRecordsRouteRoute
     }
   }
 }
 
+interface MaintenanceRecordsRouteRouteChildren {
+  MaintenanceRecordsNewRoute: typeof MaintenanceRecordsNewRoute
+  MaintenanceRecordsIndexRoute: typeof MaintenanceRecordsIndexRoute
+  MaintenanceRecordsIdEditRoute: typeof MaintenanceRecordsIdEditRoute
+}
+
+const MaintenanceRecordsRouteRouteChildren: MaintenanceRecordsRouteRouteChildren =
+  {
+    MaintenanceRecordsNewRoute: MaintenanceRecordsNewRoute,
+    MaintenanceRecordsIndexRoute: MaintenanceRecordsIndexRoute,
+    MaintenanceRecordsIdEditRoute: MaintenanceRecordsIdEditRoute,
+  }
+
+const MaintenanceRecordsRouteRouteWithChildren =
+  MaintenanceRecordsRouteRoute._addFileChildren(
+    MaintenanceRecordsRouteRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  MaintenanceRecordsIndexRoute: MaintenanceRecordsIndexRoute,
+  MaintenanceRecordsRouteRoute: MaintenanceRecordsRouteRouteWithChildren,
+  AssetsNewRoute: AssetsNewRoute,
+  AssetsIdEditRoute: AssetsIdEditRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

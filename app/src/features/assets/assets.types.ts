@@ -1,5 +1,7 @@
 import type { z } from 'zod'
+import type { ActionResult } from '#/lib/action-result'
 import type {
+  assetFormSchema,
   createAssetSchema,
   listAssetsInputSchema,
   selectAssetSchema,
@@ -15,3 +17,9 @@ export type ListAssetsResult = {
   rows: Asset[]
   total: number
 }
+
+export type AssetResult = ActionResult<Asset>
+
+export type AssetOption = { id: number; name: string }
+
+export type AssetFormValues = z.input<typeof assetFormSchema>

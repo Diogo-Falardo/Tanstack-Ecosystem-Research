@@ -1,8 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { assetQueries } from '#/features/assets/assets.queries'
 import { MaintenanceRecordForm } from '#/features/maintenance-records/maintenance-record-form'
+import { requireRouteRole } from '#/lib/route-guards'
 
-export const Route = createFileRoute('/maintenance-records/new')({
+export const Route = createFileRoute('/_authed/maintenance-records/new')({
+  beforeLoad: ({ context }) =>
+    requireRouteRole(context.user, ['admin', 'technician']),
   loader: ({ context }) => context.queryClient.query(assetQueries.options()),
   component: NewMaintenanceRecord,
 })

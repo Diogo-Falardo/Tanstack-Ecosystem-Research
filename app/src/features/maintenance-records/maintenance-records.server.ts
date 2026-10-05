@@ -2,7 +2,10 @@ import { and, asc, count, desc, eq, or, sql } from 'drizzle-orm'
 import { db } from '#/db'
 import { assets, maintenanceRecords } from '#/db/schema'
 import { fail, ok } from '#/lib/action-result'
-import { selectMaintenanceRecordSchema } from './maintenance-records.schemas'
+import {
+  maintenanceRecordRowSchema,
+  selectMaintenanceRecordSchema,
+} from './maintenance-records.schemas'
 import type {
   CreateMaintenanceRecordInput,
   ListMaintenanceRecordsInput,
@@ -86,8 +89,12 @@ export class MaintenanceRecords {
     return ok(selectMaintenanceRecordSchema.parse(row))
   }
 
+  // `includeCost` comes from the caller's role (decided in the function
+  // layer); without it the cost column is replaced by NULL in the SELECT, so
+  // the value never leaves SQLite.
   static async list(
     filters: ListMaintenanceRecordsInput,
+    { includeCost }: { includeCost: boolean },
   ): Promise<ListMaintenanceRecordsResult> {
     const where = and(
       filters.status
@@ -105,7 +112,18 @@ export class MaintenanceRecords {
 
     const [rows, totalRow] = await Promise.all([
       db
-        .select()
+        .select({
+          id: maintenanceRecords.id,
+          assetId: maintenanceRecords.assetId,
+          description: maintenanceRecords.description,
+          technician: maintenanceRecords.technician,
+          costCents: includeCost
+            ? maintenanceRecords.costCents
+            : sql<null>`null`,
+          status: maintenanceRecords.status,
+          performedAt: maintenanceRecords.performedAt,
+          createdAt: maintenanceRecords.createdAt,
+        })
         .from(maintenanceRecords)
         .where(where)
         .orderBy(orderBy)
@@ -115,7 +133,7 @@ export class MaintenanceRecords {
     ])
 
     return {
-      rows: rows.map((row) => selectMaintenanceRecordSchema.parse(row)),
+      rows: rows.map((row) => maintenanceRecordRowSchema.parse(row)),
       total: totalRow[0]?.total ?? 0,
     }
   }

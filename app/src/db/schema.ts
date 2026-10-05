@@ -1,5 +1,33 @@
-import { sqliteTable, integer, text, index } from 'drizzle-orm/sqlite-core'
+import {
+  sqliteTable,
+  integer,
+  text,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core'
 import { relations, sql } from 'drizzle-orm'
+
+export const users = sqliteTable(
+  'users',
+  {
+    id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+    email: text().notNull(),
+    name: text().notNull(),
+    passwordHash: text('password_hash').notNull(),
+    role: text({ enum: ['admin', 'technician', 'viewer'] })
+      .notNull()
+      .default('viewer'),
+    // Bumped to revoke every sealed session cookie issued for this user;
+    // the cookie itself can't be invalidated server-side.
+    sessionVersion: integer('session_version', { mode: 'number' })
+      .notNull()
+      .default(0),
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(
+      sql`(unixepoch())`,
+    ),
+  },
+  (table) => [uniqueIndex('idx_users_email').on(table.email)],
+)
 
 export const assets = sqliteTable(
   'assets',

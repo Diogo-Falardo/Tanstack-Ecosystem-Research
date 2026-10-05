@@ -24,12 +24,13 @@ import type {
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { assetQueries } from '#/features/assets/assets.queries'
 import { formatCost } from '#/lib/format'
+import { canEditRecords } from '#/lib/route-guards'
 import { maintenanceRecordQueries } from '#/features/maintenance-records/maintenance-records.queries'
 import { listMaintenanceRecordsInputSchema } from '#/features/maintenance-records/maintenance-records.schemas'
 import type {
   CreateMaintenanceRecordInput,
   ListMaintenanceRecordsInput,
-  MaintenanceRecord,
+  MaintenanceRecordRow,
 } from '#/features/maintenance-records/maintenance-records.types'
 
 // Parsed from {} so the stripped values are exactly the schema's defaults
@@ -38,7 +39,7 @@ const SEARCH_DEFAULTS = listMaintenanceRecordsInputSchema.parse({})
 
 // Layout route: the list stays mounted while child routes (new / edit) render
 // in a drawer beside it, so optimistic patches and ghost rows stay visible.
-export const Route = createFileRoute('/maintenance-records')({
+export const Route = createFileRoute('/_authed/maintenance-records')({
   validateSearch: listMaintenanceRecordsInputSchema,
   // Default values stay out of the URL; validateSearch fills them back in.
   search: {
@@ -76,9 +77,11 @@ const STATUS_OPTIONS = [
 // resizing (no onColumnSizingChange wired).
 const features = tableFeatures({ rowSortingFeature, columnSizingFeature })
 
-const columnHelper = createColumnHelper<typeof features, MaintenanceRecord>()
+const columnHelper = createColumnHelper<typeof features, MaintenanceRecordRow>()
 
-const columns = columnHelper.columns([
+// Viewers get neither cost (the server sends null for it) nor the edit link.
+// Both arrays are module constants, so switching on role keeps them stable.
+const viewerColumns = columnHelper.columns([
   columnHelper.accessor('id', { header: 'ID', enableSorting: false, size: 60 }),
   columnHelper.accessor('assetId', {
     header: 'Asset',
@@ -101,11 +104,18 @@ const columns = columnHelper.columns([
     size: 140,
     cell: (info) => new Date(info.getValue()).toLocaleDateString(),
   }),
+])
+
+const staffColumns = columnHelper.columns([
+  ...viewerColumns,
   columnHelper.accessor('costCents', {
     header: 'Cost',
     enableSorting: false,
     size: 110,
-    cell: (info) => formatCost(info.getValue()),
+    cell: (info) => {
+      const costCents = info.getValue()
+      return costCents === null ? '—' : formatCost(costCents)
+    },
   }),
   columnHelper.display({
     id: 'edit',
@@ -159,6 +169,8 @@ const SEARCH_DEBOUNCE_MS = 300
 function MaintenanceRecordsList() {
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
+  const { user } = Route.useRouteContext()
+  const canEdit = canEditRecords(user)
   const [isPending, startTransition] = useTransition()
   const tableContainerRef = useRef<HTMLDivElement>(null)
 
@@ -179,7 +191,9 @@ function MaintenanceRecordsList() {
   // Only open the drawer for a real child (new / edit), not the empty index.
   const isDrawerOpen = useChildMatches({
     select: (matches) =>
-      matches.some((match) => match.routeId !== '/maintenance-records/'),
+      matches.some(
+        (match) => match.routeId !== '/_authed/maintenance-records/',
+      ),
   })
 
   const sorting: SortingState = search.sortBy
@@ -207,7 +221,7 @@ function MaintenanceRecordsList() {
 
   const table = useTable({
     features,
-    columns,
+    columns: canEdit ? staffColumns : viewerColumns,
     data: data.rows,
     manualSorting: true,
     getRowId: (row) => String(row.id),
@@ -292,14 +306,16 @@ function MaintenanceRecordsList() {
     <div className="p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-4xl font-bold">Maintenance Records</h1>
-        <Link
-          from="/maintenance-records"
-          to="/maintenance-records/new"
-          search={(prev) => prev}
-          className="border px-4 py-2 font-medium"
-        >
-          New record
-        </Link>
+        {canEdit && (
+          <Link
+            from="/maintenance-records"
+            to="/maintenance-records/new"
+            search={(prev) => prev}
+            className="border px-4 py-2 font-medium"
+          >
+            New record
+          </Link>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-6">
@@ -481,7 +497,7 @@ function MaintenanceRecordsTableBody({
   tableContainerRef,
   isPending,
 }: {
-  table: ReactTable<typeof features, MaintenanceRecord>
+  table: ReactTable<typeof features, MaintenanceRecordRow>
   tableContainerRef: React.RefObject<HTMLDivElement | null>
   isPending: boolean
 }) {

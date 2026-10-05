@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { AssetForm } from '#/features/assets/asset-form'
+import { requireRouteRole } from '#/lib/route-guards'
 
-export const Route = createFileRoute('/assets/new')({
+export const Route = createFileRoute('/_authed/assets/new')({
+  beforeLoad: ({ context }) => requireRouteRole(context.user, ['admin']),
   component: NewAsset,
 })
 

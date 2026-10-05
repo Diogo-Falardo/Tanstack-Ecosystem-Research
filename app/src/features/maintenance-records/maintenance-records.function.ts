@@ -8,15 +8,20 @@ import {
   updateMaintenanceRecordSchema,
 } from './maintenance-records.schemas'
 
+// Only the edit drawer reads a single record, and it returns cost.
 export const sfGetMaintenanceRecord = createServerFn({ method: 'GET' })
-  .middleware([anyRole])
+  .middleware([technicianOrAdmin])
   .validator(z.number().int().positive())
   .handler(async ({ data }) => MaintenanceRecords.get(data))
 
 export const sfListMaintenanceRecords = createServerFn({ method: 'GET' })
   .middleware([anyRole])
   .validator(listMaintenanceRecordsInputSchema)
-  .handler(async ({ data }) => MaintenanceRecords.list(data))
+  .handler(async ({ data, context }) =>
+    MaintenanceRecords.list(data, {
+      includeCost: context.user.role !== 'viewer',
+    }),
+  )
 
 export const sfCreateMaintenanceRecord = createServerFn({ method: 'POST' })
   .middleware([technicianOrAdmin])

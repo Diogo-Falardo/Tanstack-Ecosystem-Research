@@ -4,6 +4,12 @@ import { maintenanceRecords } from '#/db/schema'
 
 export const selectMaintenanceRecordSchema =
   createSelectSchema(maintenanceRecords)
+
+// A list row as the caller's role is allowed to see it: viewers get
+// `costCents: null` (never selected from the DB for them).
+export const maintenanceRecordRowSchema = selectMaintenanceRecordSchema.extend({
+  costCents: z.number().int().nullable(),
+})
 // Refinements live in the drizzle-zod callback so the server validator and
 // the form schema below share the same rules and messages.
 const insertMaintenanceRecordSchema = createInsertSchema(maintenanceRecords, {

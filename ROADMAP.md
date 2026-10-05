@@ -68,6 +68,40 @@ you can explain the perf/security lesson it was meant to teach.
   Tools: Start middleware
   Real auth + roles. Route-level guard *and* server-function-level guard on
   every mutation and every query that returns sensitive fields (e.g. cost).
+  - 2026-10-05: sealed-cookie session (`useSession`) holding only
+    `{ userId, sessionVersion }`. The `users` row is read on every server
+    function call, so a role change applies on the next request. A tech
+    demoted to viewer in the DB got 403 on the very next call with the same
+    cookie. Lookup cost over HTTP on the dev server (median of 50, before →
+    after): `sfGetAsset` 6.2 → 7.5 ms, records list (25 rows) 6.8 → 8.0 ms,
+    500 rows 13 → 13.7 ms. About 1 ms per call.
+    Server-function matrix checked with real calls (cookie jar plus `origin` /
+    `sec-fetch-site` headers): no cookie → 401. Viewer → dashboard fns 403,
+    `sfGetMaintenanceRecord` 403, list returns `costCents: null` (NULL in the
+    SELECT, so cost never leaves SQLite; the SSR payload carries nulls too).
+    Technician → dashboard 403, `sfCreateAsset` 403, costs visible. Admin →
+    everything. A tampered cookie → 401. The sealed value sent as an
+    `x-ops-session-session` header → 401 (`sessionHeader: false`).
+    Surprises:
+    - Adding `src/start.ts` turns off Start's default CSRF middleware. It only
+      applies when no start instance exists. `start.ts` re-adds it, and a
+      `sec-fetch-site: cross-site` call with a valid admin cookie gets 403
+      (the POST created nothing).
+    - Logout can't kill a sealed cookie. A copied admin cookie still worked
+      until `sfLogout` bumped `sessionVersion`, then it got 401. So logout
+      signs out every device.
+    - h3's session cookie has no `SameSite` by default. It is set to `lax`
+      explicitly.
+    - Route guards are UX only (`beforeLoad` runs in the browser). Anonymous
+      SSR requests get 307 → `/login?redirect=…`, and wrong roles get 307 →
+      `/`. `//evil.com` as `redirect` falls back to `/`.
+    - Moving routes under the pathless `_authed/` changed route *ids*. One
+      `routeId !== '/maintenance-records/'` check (drawer open state) would
+      have silently broken. Also, `beforeLoad` placed above `params` broke
+      `params.parse` type inference, because route option order matters.
+    - Login takes ~35 ms of scrypt for both a wrong password and an unknown
+      email (dummy hash), so timing doesn't reveal which emails exist.
+    Next gap: no login rate limiting or lockout.
 
 - [ ] **Phase 10 — (optional) reactive sync**
   Tools: TanStack DB

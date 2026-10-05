@@ -4,11 +4,13 @@ import type {
   createMaintenanceRecordSchema,
   listMaintenanceRecordsInputSchema,
   maintenanceRecordFormSchema,
+  maintenanceRecordRowSchema,
   selectMaintenanceRecordSchema,
   updateMaintenanceRecordSchema,
 } from './maintenance-records.schemas'
 
 export type MaintenanceRecord = z.infer<typeof selectMaintenanceRecordSchema>
+export type MaintenanceRecordRow = z.infer<typeof maintenanceRecordRowSchema>
 export type CreateMaintenanceRecordInput = z.infer<
   typeof createMaintenanceRecordSchema
 >
@@ -20,7 +22,7 @@ export type ListMaintenanceRecordsInput = z.infer<
 >
 
 export type ListMaintenanceRecordsResult = {
-  rows: MaintenanceRecord[]
+  rows: MaintenanceRecordRow[]
   total: number
 }
 

@@ -4,12 +4,15 @@ import { z } from 'zod'
 import { assetQueries } from '#/features/assets/assets.queries'
 import { MaintenanceRecordForm } from '#/features/maintenance-records/maintenance-record-form'
 import { maintenanceRecordQueries } from '#/features/maintenance-records/maintenance-records.queries'
+import { requireRouteRole } from '#/lib/route-guards'
 
-export const Route = createFileRoute('/maintenance-records/$id/edit')({
+export const Route = createFileRoute('/_authed/maintenance-records/$id/edit')({
   params: {
     parse: ({ id }) => ({ id: z.coerce.number().int().positive().parse(id) }),
     stringify: ({ id }) => ({ id: String(id) }),
   },
+  beforeLoad: ({ context }) =>
+    requireRouteRole(context.user, ['admin', 'technician']),
   // Finite staleTime (not the deprecated ensureQueryData, which is 'static'):
   // a detail invalidated by a previous save is refetched before the form
   // mounts, so its defaults are never stale.

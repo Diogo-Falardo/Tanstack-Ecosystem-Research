@@ -14,7 +14,7 @@ matters is the data shape: lots of rows, aggregations and user roles.
 3. Every server function validates its input with Zod and checks authorization itself.
 4. Aggregation (sums, counts, group-by) happens in SQL, not in JavaScript.
 
-**Progress:** Phases 1–8 of [`ROADMAP.md`](ROADMAP.md) are built:
+**Progress:** Phases 1–9 of [`ROADMAP.md`](ROADMAP.md) are built:
 
 | Phase | What it added | Tool |
 | --- | --- | --- |
@@ -26,8 +26,9 @@ matters is the data shape: lots of rows, aggregations and user roles.
 | 6 | Create/edit forms with optimistic updates | Form, Query |
 | 7 | Every filter in the URL, debounced free-text search | Router, Pacer |
 | 8 | Cost dashboard, every number a SQL `GROUP BY` | Query, Drizzle |
+| 9 | Login, roles, route guards + server-function guards, cost hidden from viewers | Start middleware |
 
-The next phase is 9 (real auth and roles).
+The next phase is 10 (TanStack DB).
 
 ## Stack
 
@@ -47,30 +48,57 @@ The next phase is 9 (real auth and roles).
 ## Getting started
 
 Prerequisites: [Bun](https://bun.sh) (the lockfile is `app/bun.lock`) and
-[Node.js](https://nodejs.org) LTS. The dev server and seed script run on Node
+[Node.js](https://nodejs.org) LTS. The dev server and seed scripts run on Node
 because `better-sqlite3` is a native Node module that Bun can't load. The seed
-script runs through `tsx`, and `@types/node` is already a dev dependency.
+scripts run through `tsx`, and `@types/node` is already a dev dependency.
 
 Run everything from `app/`:
 
 ```bash
 cd app
 bun install
-echo 'DATABASE_URL=./local.db' > .env.local   # any SQLite file path
-bun run db:migrate                             # or: bun run db:push
-bun run db:seed                                # 500 assets, 80,000 maintenance records
+echo 'DATABASE_URL=./local.db' > .env.local                       # any SQLite file path
+echo "SESSION_SECRET=$(openssl rand -hex 32)" >> .env.local         # 32+ chars, encrypts the session cookie
+bun run db:migrate                                                 # creates assets, maintenance_records, users
+bun run db:seed                                                    # 500 assets, 80,000 maintenance records
+bun run db:seed-users                                              # the three logins below
 bun run dev
 ```
 
-Then open http://localhost:3000. The home page links to every screen:
-the records list (with preset views such as "Completed" or "Newest first"),
-new record, new asset, and edit-by-ID for records and assets. A top bar on
-every page links to the home page, the cost dashboard (`/dashboard`) and the
-records list.
+Then open http://localhost:3000. Every page except `/login` requires a
+login, so you land on the login form first.
 
-`DATABASE_URL` is read by `drizzle.config.ts`, `scripts/db.init.ts` (both load
-`.env.local`, then `.env`) and by `src/db/index.ts` at runtime. `*.db` files and
-`*.local` files are gitignored.
+### Login access
+
+`bun run db:seed-users` creates one account per role. All three use the
+password `password123`, or the value of `SEED_USER_PASSWORD` if it is set
+when you run the script. Re-running it resets the passwords and signs those
+users out everywhere.
+
+| Email | Role | Can |
+| --- | --- | --- |
+| `admin@example.com` | admin | Everything: records with costs, create/edit records, create/edit assets, `/dashboard` |
+| `tech@example.com` | technician | Records with costs, create/edit records. No assets pages, no dashboard |
+| `viewer@example.com` | viewer | Read the records list only. Cost comes back as `null` and the Cost column is hidden |
+
+There is no sign-up or user-management screen. To add a user or change a
+role, edit the `users` table (e.g. `bun run db:studio`) or `scripts/seed-users.ts`.
+A role change takes effect on the user's next request, with no re-login.
+
+After login, the home page links to every screen your role can open: the
+records list (with preset views such as "Completed" or "Newest first"), new
+record, new asset, and edit-by-ID for records and assets. The top bar shows
+the links for your role, your name and role, and a **Log out** button.
+Logging out signs that user out on every device.
+
+| Env var | Read by | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | `drizzle.config.ts`, both seed scripts, `src/db/index.ts` | SQLite file path |
+| `SESSION_SECRET` | `src/lib/session.ts` | Encrypts and signs the session cookie. Must be at least 32 characters; server functions throw without it |
+| `SEED_USER_PASSWORD` | `scripts/seed-users.ts` (optional) | Password for the three seeded users (default `password123`) |
+
+The scripts load `.env.local`, then `.env`. `*.db` files and `*.local` files
+are gitignored.
 
 | Script | Purpose |
 | --- | --- |
@@ -81,7 +109,8 @@ records list.
 | `db:push` | Push the schema straight to the DB without a migration |
 | `db:pull` | Introspect the DB back into a schema |
 | `db:studio` | Open Drizzle Studio |
-| `db:seed` | Wipe and reseed both tables (`scripts/db.init.ts`) |
+| `db:seed` | Wipe and reseed assets and maintenance records (`scripts/db.init.ts`) |
+| `db:seed-users` | Upsert the three role logins (`scripts/seed-users.ts`); leaves records alone |
 | `generate-routes` | Regenerate `src/routeTree.gen.ts` with the TanStack Router CLI |
 | `lint` | ESLint |
 | `format` | Prettier write + ESLint fix |
@@ -92,36 +121,48 @@ records list.
 ```
 app/
 ├── drizzle/                 # generated SQL migrations
-├── scripts/db.init.ts       # seed script
+├── scripts/
+│   ├── db.init.ts           # seed assets + maintenance records
+│   └── seed-users.ts        # seed the three role logins
 └── src/
     ├── db/
     │   ├── index.ts         # drizzle(better-sqlite3) client
-    │   └── schema.ts        # tables, indexes, relations
+    │   └── schema.ts        # tables (users, assets, maintenance_records), indexes, relations
     ├── components/form/     # TanStack Form field kit (useAppForm, fields, alert, submit)
     ├── features/
     │   ├── assets/          # + asset-form.tsx
+    │   ├── auth/            # login/logout/current user + login-form.tsx
     │   ├── dashboard/       # read-only aggregates: no mutations, no form
     │   └── maintenance-records/   # + maintenance-record-form.tsx
     ├── lib/
     │   ├── action-result.ts # { ok, data } | { ok: false, formError, fieldErrors }
-    │   └── format.ts        # formatCost: integer cents → USD string
+    │   ├── format.ts        # formatCost: integer cents → USD string
+    │   ├── route-guards.ts  # requireRouteRole, safeRedirect, role helpers for the UI
+    │   └── session.ts       # useAppSession: sealed session cookie config
     ├── middleware/
-    │   └── auth.middleware.ts
+    │   └── auth.middleware.ts   # getCurrentUser + anyRole / technicianOrAdmin / adminOnly
     ├── routes/
-    │   ├── __root.tsx             # document shell + top nav bar
-    │   ├── index.tsx              # / home: links to every route
-    │   ├── dashboard.tsx          # /dashboard: cost charts and breakdowns
-    │   ├── assets/
-    │   │   ├── new.tsx            # /assets/new
-    │   │   └── $id.edit.tsx       # /assets/$id/edit
-    │   └── maintenance-records/
-    │       ├── route.tsx          # list (layout) + drawer <Outlet/>
-    │       ├── index.tsx          # empty: drawer closed
-    │       ├── new.tsx            # create drawer
-    │       └── $id.edit.tsx       # edit drawer
+    │   ├── __root.tsx             # document shell, loads the user, top nav bar
+    │   ├── login.tsx              # /login (public)
+    │   ├── _authed.tsx            # pathless layout: redirects to /login if logged out
+    │   └── _authed/               # everything below requires a login
+    │       ├── index.tsx              # / home: links to every route your role can open
+    │       ├── dashboard.tsx          # /dashboard (admin): cost charts and breakdowns
+    │       ├── assets/                # (admin)
+    │       │   ├── new.tsx            # /assets/new
+    │       │   └── $id.edit.tsx       # /assets/$id/edit
+    │       └── maintenance-records/
+    │           ├── route.tsx          # list (layout) + drawer <Outlet/>
+    │           ├── index.tsx          # empty: drawer closed
+    │           ├── new.tsx            # create drawer (admin, technician)
+    │           └── $id.edit.tsx       # edit drawer (admin, technician)
     ├── routeTree.gen.ts     # generated, do not edit
-    └── router.tsx
+    ├── router.tsx
+    └── start.ts             # Start instance: CSRF middleware for server functions
 ```
+
+The `_authed` folder is pathless: it adds a guard, not a URL segment, so
+`routes/_authed/dashboard.tsx` is still served at `/dashboard`.
 
 Each feature uses the same file split. Using `maintenance-records` as the example:
 
@@ -136,7 +177,8 @@ Each feature uses the same file split. Using `maintenance-records` as the exampl
 | `*-form.tsx` | The feature form, built from the shared field kit |
 
 `dashboard` only reads data, so it has just `schemas`, `types`, `server`,
-`function` and `queries`.
+`function` and `queries`. `auth` has no `list`/`get`: its server class is
+`verifyCredentials`, `getSessionUser` and `revokeSessions`.
 
 Imports use the `#/*` alias, which maps to `app/src/*` (the `imports` field in
 `app/package.json`), e.g. `import { db } from '#/db'`.
@@ -165,13 +207,22 @@ rounding errors (ground rule 4).
 ```
 
 `MaintenanceRecords.list()` pushes the filter, sort and page into SQL, and
-gets `total` from a `count()` query, not from `rows.length`:
+gets `total` from a `count()` query, not from `rows.length`. It selects
+columns explicitly so the cost column can be swapped for `NULL` when the
+caller may not see it (see section 10):
 
 `app/src/features/maintenance-records/maintenance-records.server.ts`
 ```ts
     const [rows, totalRow] = await Promise.all([
       db
-        .select()
+        .select({
+          id: maintenanceRecords.id,
+          // …
+          costCents: includeCost
+            ? maintenanceRecords.costCents
+            : sql<null>`null`,
+          // …
+        })
         .from(maintenanceRecords)
         .where(where)
         .orderBy(orderBy)
@@ -200,11 +251,15 @@ still applies when someone calls the endpoint without going through the UI.
 export const sfListMaintenanceRecords = createServerFn({ method: 'GET' })
   .middleware([anyRole])
   .validator(listMaintenanceRecordsInputSchema)
-  .handler(async ({ data }) => MaintenanceRecords.list(data))
+  .handler(async ({ data, context }) =>
+    MaintenanceRecords.list(data, {
+      includeCost: context.user.role !== 'viewer',
+    }),
+  )
 ```
 
-`authMiddleware` puts `user` in the context. `requireRole(roles)` builds on it
-and throws `Forbidden` for any role not in the list. Three presets are exported:
+`authMiddleware` puts `user` in the context (or answers 401). `requireRole(roles)` builds on it
+and answers 403 `Forbidden` for any role not in the list. Three presets are exported:
 
 `app/src/middleware/auth.middleware.ts`
 ```ts
@@ -213,8 +268,15 @@ export const technicianOrAdmin = requireRole(['admin', 'technician'])
 export const adminOnly = requireRole(['admin'])
 ```
 
-Reads use `anyRole`. Maintenance-record writes use `technicianOrAdmin`. Asset
-writes use `adminOnly`.
+| Server function | Guard |
+| --- | --- |
+| `sfListMaintenanceRecords` | `anyRole`; `costCents` is `null` for viewers |
+| `sfGetMaintenanceRecord` (edit drawer) | `technicianOrAdmin` |
+| `sfCreateMaintenanceRecord`, `sfUpdateMaintenanceRecord` | `technicianOrAdmin` |
+| `sfGetAsset`, `sfListAssets`, `sfListAssetOptions` | `anyRole` |
+| `sfCreateAsset`, `sfUpdateAsset` | `adminOnly` |
+| `sfDashboardCostByMonth` / `ByStatus` / `TopAssets` | `adminOnly` |
+| `sfLogin`, `sfGetCurrentUser`, `sfLogout` | none (public); `sfGetCurrentUser` returns `null` when logged out |
 
 The validator runs **on the server**, so it is the security gate; the form's
 client-side validation is only UX. Create/update now return an `ActionResult`:
@@ -222,9 +284,7 @@ expected failures (asset not found, record deleted) come back as
 `{ ok: false, formError?, fieldErrors? }`, while auth and validator failures
 still throw.
 
-**Gotcha:** `getCurrentUser()` is a stub that always returns
-`{ id: 1, role: 'admin' }` until real auth arrives in Phase 9. To check that a
-forbidden call really gets rejected, change the role there.
+How the user is resolved (session cookie, DB lookup, CSRF) is in section 10.
 
 ### 3. TanStack Router
 
@@ -252,11 +312,11 @@ the URL: `/maintenance-records?page=0&pageSize=500&sortDir=asc` redirects to
 plain `/maintenance-records`. `loaderDeps` makes the loader re-run whenever
 the search params change:
 
-`app/src/routes/maintenance-records/route.tsx`
+`app/src/routes/_authed/maintenance-records/route.tsx`
 ```ts
 const SEARCH_DEFAULTS = listMaintenanceRecordsInputSchema.parse({})
 
-export const Route = createFileRoute('/maintenance-records')({
+export const Route = createFileRoute('/_authed/maintenance-records')({
   validateSearch: listMaintenanceRecordsInputSchema,
   search: {
     middlewares: [stripSearchParams(SEARCH_DEFAULTS)],
@@ -268,7 +328,8 @@ The list is a **layout route** (`route.tsx`). `new.tsx` and `$id.edit.tsx`
 render through its `<Outlet/>` in a drawer beside the table, and they inherit
 its search params, so opening or closing the drawer keeps page, sort and
 filter. `index.tsx` renders nothing, and the drawer only opens when
-`useChildMatches` finds a child other than the index.
+`useChildMatches` finds a child other than the index
+(`routeId !== '/_authed/maintenance-records/'`).
 
 The component reads the URL with `Route.useSearch()` and changes it with
 `Route.useNavigate()`, e.g. `navigate({ search: (prev) => ({ ...prev, page }) })`.
@@ -370,7 +431,7 @@ the form.
 Asset mutations invalidate `['assets']` and `['dashboard']` the same way,
 since asset names appear in the top-assets panel.
 
-`app/src/routes/maintenance-records/route.tsx`
+`app/src/routes/_authed/maintenance-records/route.tsx`
 ```ts
   const ghostRows = useMutationState({
     filters: {
@@ -394,12 +455,15 @@ sort state, and you write the markup yourself. v9 makes you opt in to
 features: register them with `tableFeatures`, and use the result to type the
 column helper:
 
-`app/src/routes/maintenance-records/route.tsx`
+`app/src/routes/_authed/maintenance-records/route.tsx`
 ```ts
 const features = tableFeatures({ rowSortingFeature, columnSizingFeature })
 
-const columnHelper = createColumnHelper<typeof features, MaintenanceRecord>()
+const columnHelper = createColumnHelper<typeof features, MaintenanceRecordRow>()
 ```
+
+There are two column arrays: `viewerColumns`, and `staffColumns`, which adds
+Cost and the Edit link. The table picks one by role.
 
 **The key point:** no sorted row model is registered, and the table uses
 `manualSorting: true`. Clicking a sortable header (`status` or `performedAt`)
@@ -410,7 +474,7 @@ the slice the server returned, and it never sorts it again (ground rule 2).
 ```ts
   const table = useTable({
     features,
-    columns,
+    columns: canEdit ? staffColumns : viewerColumns,
     data: data.rows,
     manualSorting: true,
     getRowId: (row) => String(row.id),
@@ -430,7 +494,7 @@ the rows in view (plus 5 overscan rows) are in the DOM. The virtualizer lives in
 its own `MaintenanceRecordsTableBody` component, so scroll-driven re-renders
 don't reach the header, filter or pager.
 
-`app/src/routes/maintenance-records/route.tsx`
+`app/src/routes/_authed/maintenance-records/route.tsx`
 ```ts
   const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
     count: rows.length,
@@ -574,7 +638,7 @@ input keeps every keystroke in local state, and only the debounced call writes
 `q` to the URL. Typing a word causes one navigation and one server request, not
 one per character.
 
-`app/src/routes/maintenance-records/route.tsx`
+`app/src/routes/_authed/maintenance-records/route.tsx`
 ```ts
   const searchDebouncer = useDebouncer(applySearch, {
     wait: SEARCH_DEBOUNCE_MS,
@@ -698,25 +762,121 @@ plan are noted under Phase 8 in [`ROADMAP.md`](ROADMAP.md).
 
 - Drizzle's `sum()` comes back as a string on SQLite. `sql<number>` plus
   `.mapWith(Number)` gives a real number.
-- The dashboard server functions use `anyRole`, with a `TODO(Phase 9)`. Cost
-  totals are sensitive, but the records list already shows `costCents` to
-  every role, so both get locked down together in Phase 9.
+- The dashboard is admin-only: all three server functions use `adminOnly`,
+  and the route redirects other roles to `/`.
+
+### 10. Auth and roles (Start middleware)
+
+Login sets a session cookie. Each server function reads that cookie and the
+`users` row, and checks the role itself (ground rule 3). The route guards
+only decide what the UI shows and where it redirects.
+
+**Session.** `useSession` from `@tanstack/react-start/server` stores a sealed
+(encrypted and signed) cookie, `ops-session`, with no server-side session
+store. It holds only `{ userId, sessionVersion }`, never the role:
+
+`app/src/lib/session.ts`
+```ts
+  return useSession<AppSession>({
+    name: 'ops-session',
+    password: sessionSecret(),
+    maxAge: 60 * 60 * 8,
+    sessionHeader: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      secure: process.env.NODE_ENV === 'production',
+    },
+  })
+```
+
+`getCurrentUser()` (in `auth.middleware.ts`) unseals the cookie and loads the
+user by primary key on **every** server-function call. A role change or a
+revoked session therefore applies on the next request. The lookup adds about
+1 ms per call. It is wrapped in `createServerOnlyFn` so its session and DB
+imports stay out of the client bundle.
+
+**Passwords.** Hashed with `node:crypto` scrypt (`scrypt$<salt>$<hash>`) and
+compared with `timingSafeEqual`. An unknown email still runs scrypt against a
+dummy hash, and both failures return the same "Invalid email or password", so
+neither the message nor the timing reveals which emails exist.
+
+**Login / logout.** `sfLogin` clears the session before writing the new one,
+which issues a fresh session id. `sfLogout` bumps `users.session_version`, so
+every copy of that user's cookie, on any device, stops working. Both
+mutations call `queryClient.clear()` on success. The browser keeps one
+`QueryClient` for the whole tab, so without that the previous user's cached
+rows (with costs) could render for the next user.
+
+**Route guards.** The root route's `beforeLoad` loads the current user
+(`authQueries.me()`, 5-minute `staleTime`) into the router context. Then:
+
+- `_authed.tsx` redirects a logged-out visitor to `/login?redirect=<path>`.
+- Routes that need a role call `requireRouteRole(context.user, [...])` in
+  `beforeLoad`, which redirects to `/`.
+- `/login` sends a logged-in user on to `redirect`. `safeRedirect()` only
+  accepts same-app paths, so `?redirect=//evil.com` goes to `/`.
+
+| Route | Who |
+| --- | --- |
+| `/login` | anyone |
+| `/`, `/maintenance-records` | any logged-in user |
+| `/maintenance-records/new`, `/maintenance-records/$id/edit` | admin, technician |
+| `/dashboard`, `/assets/new`, `/assets/$id/edit` | admin |
+
+**CSRF.** Start protects server functions from cross-site calls with a default
+CSRF middleware, but **only while no `src/start.ts` exists**. Once that file
+exists, only the middleware it lists runs, so `start.ts` re-adds it:
+
+`app/src/start.ts`
+```ts
+const csrfMiddleware = createCsrfMiddleware({
+  filter: (ctx) => ctx.handlerType === 'serverFn',
+})
+
+export const startInstance = createStart(() => ({
+  requestMiddleware: [csrfMiddleware],
+}))
+```
+
+**Gotchas:**
+
+- h3's session cookie sets no `SameSite` by default, and also accepts the
+  sealed value from an `x-<name>-session` request header. `session.ts`
+  sets `sameSite: 'lax'` and `sessionHeader: false`.
+- In route options, `beforeLoad` must come after `params` / `validateSearch`.
+  Above them, it breaks type inference for `params.parse`.
+- Moving routes into `_authed/` changes their route **ids** (not URLs).
+  Any code comparing `routeId` strings has to change too.
+- Calling a server function from curl or a script needs
+  `origin: http://localhost:3000` and `sec-fetch-site: same-origin` headers,
+  or CSRF answers 403.
+- There is no login rate limiting or lockout yet.
+
+The role checks, revocation and timings are noted under Phase 9 in
+[`ROADMAP.md`](ROADMAP.md).
 
 ## How it fits together
 
 Loading `/maintenance-records?status=completed&q=bearings&sortBy=performedAt&sortDir=desc`:
 
+0. **Router:** the root `beforeLoad` loads the current user, and
+   `_authed.tsx` redirects to `/login` if there isn't one.
 1. **Router:** `validateSearch` parses the URL with
    `listMaintenanceRecordsInputSchema` (defaults fill in `page: 0`, `pageSize: 500`).
 2. **Router:** `loaderDeps` hands the parsed search to the loader as `filters`.
 3. **Query:** the loader calls `queryClient.query(maintenanceRecordQueries.list(filters))`,
    keyed by `['maintenance-records', 'list', filters]`.
 4. **Start:** the `queryFn` calls `sfListMaintenanceRecords({ data: filters })`.
-5. **Start middleware:** `anyRole` → `authMiddleware` resolves the user and checks the role.
+5. **Start middleware:** `anyRole` → `authMiddleware` unseals the session
+   cookie, loads the user row and checks the role. A viewer's request
+   continues with `includeCost: false`.
 6. **Start validator:** the same Zod schema parses `filters` again on the server.
 7. **Drizzle:** `MaintenanceRecords.list()` runs
    `WHERE status = ? AND (description LIKE ? OR technician LIKE ?) ORDER BY performed_at DESC LIMIT 500 OFFSET 0`
-   and a `count()` query with the same `WHERE`.
+   (selecting `NULL` instead of `cost_cents` for viewers) and a `count()`
+   query with the same `WHERE`.
 8. **Query:** on SSR the result is dehydrated into the HTML. On the client,
    `useSuspenseQuery` reads it from the cache.
 9. **Table:** `useTable` builds the rows and headers from `data.rows` with no client-side sorting.

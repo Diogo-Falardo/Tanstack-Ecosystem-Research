@@ -3,12 +3,14 @@ import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { AssetForm } from '#/features/assets/asset-form'
 import { assetQueries } from '#/features/assets/assets.queries'
+import { requireRouteRole } from '#/lib/route-guards'
 
-export const Route = createFileRoute('/assets/$id/edit')({
+export const Route = createFileRoute('/_authed/assets/$id/edit')({
   params: {
     parse: ({ id }) => ({ id: z.coerce.number().int().positive().parse(id) }),
     stringify: ({ id }) => ({ id: String(id) }),
   },
+  beforeLoad: ({ context }) => requireRouteRole(context.user, ['admin']),
   loader: ({ context, params }) =>
     context.queryClient.query({
       ...assetQueries.detail(params.id),

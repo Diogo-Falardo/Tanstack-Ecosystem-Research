@@ -5,10 +5,12 @@ export function TextField({
   label,
   hint,
   autoComplete,
+  type = 'text',
 }: {
   label: string
   hint?: string
   autoComplete?: string
+  type?: 'text' | 'email' | 'password'
 }) {
   const { field, hintId, errorId, showError, message, controlProps } =
     useFieldA11y(hint)
@@ -22,7 +24,7 @@ export function TextField({
       <FieldHint id={hintId} hint={hint} />
       <input
         {...controlProps}
-        type="text"
+        type={type}
         autoComplete={autoComplete}
         className="mt-1 border p-2"
         value={value}

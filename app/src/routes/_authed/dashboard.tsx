@@ -14,16 +14,18 @@ import type {
   TopAssetRow,
 } from '#/features/dashboard/dashboard.types'
 import { formatCost } from '#/lib/format'
+import { requireRouteRole } from '#/lib/route-guards'
 
 // Parsed from {} so the stripped value is exactly the schema's default.
 const SEARCH_DEFAULTS = dashboardInputSchema.parse({})
 
-export const Route = createFileRoute('/dashboard')({
+export const Route = createFileRoute('/_authed/dashboard')({
   validateSearch: dashboardInputSchema,
   search: {
     middlewares: [stripSearchParams(SEARCH_DEFAULTS)],
   },
   loaderDeps: ({ search }) => ({ input: search }),
+  beforeLoad: ({ context }) => requireRouteRole(context.user, ['admin']),
   // query(), not ensureQueryData(): it refetches when a mutation has
   // invalidated ['dashboard'], instead of returning the stale cache.
   loader: async ({ context, deps }) => {

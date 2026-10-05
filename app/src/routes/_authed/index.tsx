@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import type { Role } from '#/features/auth/auth.types'
 import type { ListMaintenanceRecordsInput } from '#/features/maintenance-records/maintenance-records.types'
+import { canEditRecords, isAdmin } from '#/lib/route-guards'
 
-export const Route = createFileRoute('/')({ component: Home })
+export const Route = createFileRoute('/_authed/')({ component: Home })
 
 // Shortcuts into the records list. Each one is just typed search params, so
 // it lands on the same server-filtered URL the filter controls would build.
@@ -17,15 +19,37 @@ const RECORD_VIEWS: Array<{
   { label: 'Newest first', search: { sortBy: 'performedAt', sortDir: 'desc' } },
 ]
 
-const ROUTE_MAP = [
-  { path: '/maintenance-records', note: 'List with search, filters, sort' },
-  { path: '/maintenance-records/new', note: 'Create, in the drawer' },
-  { path: '/maintenance-records/$id/edit', note: 'Edit, in the drawer' },
-  { path: '/assets/new', note: 'Create asset' },
-  { path: '/assets/$id/edit', note: 'Edit asset' },
+const ALL_ROLES: Role[] = ['admin', 'technician', 'viewer']
+const STAFF: Role[] = ['admin', 'technician']
+const ADMIN: Role[] = ['admin']
+
+// Same role lists as the route guards; only shows routes the user can open.
+const ROUTE_MAP: Array<{ path: string; note: string; roles: Role[] }> = [
+  {
+    path: '/maintenance-records',
+    note: 'List with search, filters, sort',
+    roles: ALL_ROLES,
+  },
+  {
+    path: '/maintenance-records/new',
+    note: 'Create, in the drawer',
+    roles: STAFF,
+  },
+  {
+    path: '/maintenance-records/$id/edit',
+    note: 'Edit, in the drawer',
+    roles: STAFF,
+  },
+  { path: '/dashboard', note: 'Cost dashboard', roles: ADMIN },
+  { path: '/assets/new', note: 'Create asset', roles: ADMIN },
+  { path: '/assets/$id/edit', note: 'Edit asset', roles: ADMIN },
 ]
 
 function Home() {
+  const { user } = Route.useRouteContext()
+  const canEdit = canEditRecords(user)
+  const admin = isAdmin(user)
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-8 sm:py-14">
       <header className="home-rise">
@@ -44,7 +68,7 @@ function Home() {
       <div className="mt-10 grid gap-6 md:grid-cols-5">
         <section
           aria-labelledby="records-heading"
-          className="home-rise rounded-xl border border-neutral-200 bg-white p-6 shadow-sm md:col-span-3"
+          className={`home-rise rounded-xl border border-neutral-200 bg-white p-6 shadow-sm ${admin ? 'md:col-span-3' : 'md:col-span-5'}`}
           style={{ animationDelay: '60ms' }}
         >
           <h2
@@ -64,12 +88,14 @@ function Home() {
             >
               Open records →
             </Link>
-            <Link
-              to="/maintenance-records/new"
-              className="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 px-4 font-medium text-neutral-900 transition hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 active:scale-[0.98]"
-            >
-              New record
-            </Link>
+            {canEdit && (
+              <Link
+                to="/maintenance-records/new"
+                className="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 px-4 font-medium text-neutral-900 transition hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 active:scale-[0.98]"
+              >
+                New record
+              </Link>
+            )}
           </div>
 
           <h3 className="mt-7 text-xs font-semibold tracking-widest text-neutral-500 uppercase">
@@ -89,44 +115,48 @@ function Home() {
             ))}
           </ul>
 
-          <OpenById
-            label="Edit record by ID"
-            inputId="record-id"
-            to="/maintenance-records/$id/edit"
-          />
+          {canEdit && (
+            <OpenById
+              label="Edit record by ID"
+              inputId="record-id"
+              to="/maintenance-records/$id/edit"
+            />
+          )}
         </section>
 
-        <section
-          aria-labelledby="assets-heading"
-          className="home-rise flex flex-col rounded-xl border border-neutral-200 bg-white p-6 shadow-sm md:col-span-2"
-          style={{ animationDelay: '120ms' }}
-        >
-          <h2
-            id="assets-heading"
-            className="text-lg font-semibold text-neutral-900"
+        {admin && (
+          <section
+            aria-labelledby="assets-heading"
+            className="home-rise flex flex-col rounded-xl border border-neutral-200 bg-white p-6 shadow-sm md:col-span-2"
+            style={{ animationDelay: '120ms' }}
           >
-            Assets
-          </h2>
-          <p className="mt-1 text-sm text-neutral-600">
-            The equipment records attach to. There's no list page yet, so open
-            one by ID.
-          </p>
-
-          <div className="mt-5">
-            <Link
-              to="/assets/new"
-              className="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 px-4 font-medium text-neutral-900 transition hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 active:scale-[0.98]"
+            <h2
+              id="assets-heading"
+              className="text-lg font-semibold text-neutral-900"
             >
-              New asset
-            </Link>
-          </div>
+              Assets
+            </h2>
+            <p className="mt-1 text-sm text-neutral-600">
+              The equipment records attach to. There's no list page yet, so open
+              one by ID.
+            </p>
 
-          <OpenById
-            label="Edit asset by ID"
-            inputId="asset-id"
-            to="/assets/$id/edit"
-          />
-        </section>
+            <div className="mt-5">
+              <Link
+                to="/assets/new"
+                className="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 px-4 font-medium text-neutral-900 transition hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 active:scale-[0.98]"
+              >
+                New asset
+              </Link>
+            </div>
+
+            <OpenById
+              label="Edit asset by ID"
+              inputId="asset-id"
+              to="/assets/$id/edit"
+            />
+          </section>
+        )}
       </div>
 
       <section
@@ -141,17 +171,19 @@ function Home() {
           Route map
         </h2>
         <ul className="mt-3 divide-y divide-neutral-200 border-y border-neutral-200">
-          {ROUTE_MAP.map((route) => (
-            <li
-              key={route.path}
-              className="flex flex-col gap-1 py-3 sm:flex-row sm:items-baseline sm:gap-6"
-            >
-              <code className="text-sm text-neutral-900 sm:w-80 sm:shrink-0">
-                {route.path}
-              </code>
-              <span className="text-sm text-neutral-500">{route.note}</span>
-            </li>
-          ))}
+          {ROUTE_MAP.filter((route) => route.roles.includes(user.role)).map(
+            (route) => (
+              <li
+                key={route.path}
+                className="flex flex-col gap-1 py-3 sm:flex-row sm:items-baseline sm:gap-6"
+              >
+                <code className="text-sm text-neutral-900 sm:w-80 sm:shrink-0">
+                  {route.path}
+                </code>
+                <span className="text-sm text-neutral-500">{route.note}</span>
+              </li>
+            ),
+          )}
         </ul>
       </section>
     </div>

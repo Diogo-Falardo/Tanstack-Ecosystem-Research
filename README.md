@@ -14,9 +14,19 @@ matters is the data shape: lots of rows, aggregations and user roles.
 3. Every server function validates its input with Zod and checks authorization itself.
 4. Aggregation (sums, counts, group-by) happens in SQL, not in JavaScript.
 
-**Progress:** Phases 1–5 of [`ROADMAP.md`](ROADMAP.md) are built: schema + seed,
-server functions, a Query-backed list, the Table UI, and virtualization. The
-next phase is 6 (Forms).
+**Progress:** Phases 1–7 of [`ROADMAP.md`](ROADMAP.md) are built:
+
+| Phase | What it added | Tool |
+| --- | --- | --- |
+| 1 | Indexed schema, 500 assets + 80,000 maintenance records | Drizzle |
+| 2 | Validated, role-checked server functions | Start, Zod |
+| 3 | Paginated list, cache keyed by page/filter/sort | Query |
+| 4 | Server-sorted, server-filtered table | Table |
+| 5 | Virtualized body for pages of up to 2,000 rows | Virtual |
+| 6 | Create/edit forms with optimistic updates | Form, Query |
+| 7 | Every filter in the URL, debounced free-text search | Router, Pacer |
+
+The next phase is 8 (dashboards with SQL aggregation).
 
 ## Stack
 
@@ -27,13 +37,17 @@ next phase is 6 (Forms).
 | Server state | `@tanstack/react-query` `^5.103.2`, `@tanstack/react-router-ssr-query` |
 | Table | `@tanstack/react-table` `^9.2.4` |
 | Virtualization | `@tanstack/react-virtual` `^3.14.13` |
+| Forms | `@tanstack/react-form` `1.33.5` (pinned exactly) |
+| Debouncing | `@tanstack/react-pacer` `^0.24.1` |
 | Data | SQLite via `better-sqlite3` + `drizzle-orm` / `drizzle-kit` |
 | Validation | `zod` `^4`, `drizzle-zod` |
 | Styling | Tailwind CSS 4 |
 
 ## Getting started
 
-Prerequisites: [Bun](https://bun.sh) (the lockfile is `app/bun.lock`). The seed
+Prerequisites: [Bun](https://bun.sh) (the lockfile is `app/bun.lock`) and
+[Node.js](https://nodejs.org) LTS. The dev server and seed script run on Node
+because `better-sqlite3` is a native Node module that Bun can't load. The seed
 script runs through `tsx`, and `@types/node` is already a dev dependency.
 
 Run everything from `app/`:
@@ -47,7 +61,10 @@ bun run db:seed                                # 500 assets, 80,000 maintenance 
 bun run dev
 ```
 
-Then open http://localhost:3000/maintenance-records.
+Then open http://localhost:3000. The home page links to every screen:
+the records list (with preset views such as "Completed" or "Newest first"),
+new record, new asset, and edit-by-ID for records and assets. A top bar on
+every page links back to it.
 
 `DATABASE_URL` is read by `drizzle.config.ts`, `scripts/db.init.ts` (both load
 `.env.local`, then `.env`) and by `src/db/index.ts` at runtime. `*.db` files and
@@ -78,15 +95,25 @@ app/
     ├── db/
     │   ├── index.ts         # drizzle(better-sqlite3) client
     │   └── schema.ts        # tables, indexes, relations
+    ├── components/form/     # TanStack Form field kit (useAppForm, fields, alert, submit)
     ├── features/
-    │   ├── assets/          # server side only so far (queries/mutations empty)
-    │   └── maintenance-records/
+    │   ├── assets/          # + asset-form.tsx
+    │   └── maintenance-records/   # + maintenance-record-form.tsx
+    ├── lib/
+    │   └── action-result.ts # { ok, data } | { ok: false, formError, fieldErrors }
     ├── middleware/
     │   └── auth.middleware.ts
     ├── routes/
-    │   ├── __root.tsx
-    │   ├── index.tsx
-    │   └── maintenance-records/index.tsx
+    │   ├── __root.tsx             # document shell + top nav bar
+    │   ├── index.tsx              # / home: links to every route
+    │   ├── assets/
+    │   │   ├── new.tsx            # /assets/new
+    │   │   └── $id.edit.tsx       # /assets/$id/edit
+    │   └── maintenance-records/
+    │       ├── route.tsx          # list (layout) + drawer <Outlet/>
+    │       ├── index.tsx          # empty: drawer closed
+    │       ├── new.tsx            # create drawer
+    │       └── $id.edit.tsx       # edit drawer
     ├── routeTree.gen.ts     # generated, do not edit
     └── router.tsx
 ```
@@ -95,12 +122,13 @@ Each feature uses the same file split. Using `maintenance-records` as the exampl
 
 | File | Contents |
 | --- | --- |
-| `*.schemas.ts` | Zod schemas derived from the Drizzle table with `drizzle-zod` (`createSelectSchema` / `createInsertSchema`), plus the list-input schema |
-| `*.types.ts` | `z.infer` types from those schemas, plus the `{ rows, total }` result type |
-| `*.server.ts` | A class with static DB methods (`get`, `create`, `update`, `list`). Server-only. |
+| `*.schemas.ts` | Zod schemas derived from the Drizzle table with `drizzle-zod` (`createSelectSchema` / `createInsertSchema`, with shared refinements), the list-input schema, and the form schema |
+| `*.types.ts` | `z.infer` types from those schemas, the `{ rows, total }` result type, `ActionResult` and form-value types |
+| `*.server.ts` | A class with static DB methods (`get`, `create`, `update`, `list`). Server-only. `create`/`update` return `ActionResult` |
 | `*.function.ts` | `createServerFn` wrappers: middleware, then validator, then handler, calling the server class |
-| `*.queries.ts` | `queryOptions` factories that call the server functions |
-| `*.mutations.ts` | Empty until Phase 6 (Forms) |
+| `*.queries.ts` | `queryOptions` factories that call the server functions (`list`, `detail`, asset `options`) |
+| `*.mutations.ts` | `mutationOptions` factories: cache work (optimistic patch, rollback, invalidation) |
+| `*-form.tsx` | The feature form, built from the shared field kit |
 
 Imports use the `#/*` alias, which maps to `app/src/*` (the `imports` field in
 `app/package.json`), e.g. `import { db } from '#/db'`.
@@ -180,6 +208,12 @@ export const adminOnly = requireRole(['admin'])
 Reads use `anyRole`. Maintenance-record writes use `technicianOrAdmin`. Asset
 writes use `adminOnly`.
 
+The validator runs **on the server**, so it is the security gate; the form's
+client-side validation is only UX. Create/update now return an `ActionResult`:
+expected failures (asset not found, record deleted) come back as
+`{ ok: false, formError?, fieldErrors? }`, while auth and validator failures
+still throw.
+
 **Gotcha:** `getCurrentUser()` is a stub that always returns
 `{ id: 1, role: 'admin' }` until real auth arrives in Phase 9. To check that a
 forbidden call really gets rejected, change the role there.
@@ -199,17 +233,34 @@ declares a typed context, so every loader can use `context.queryClient`:
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
 ```
 
-The list page keeps page, sort and status filter in the **URL**. The same Zod
-schema that the server function validates against also validates the search
-params, so a hand-edited URL can't send an invalid request. `loaderDeps` makes
-the loader re-run whenever the search params change:
+The list page keeps **every** filter in the URL: page, sort, status, asset
+and the free-text search `q`. The same Zod schema that the server function
+validates against also validates the search params, so a hand-edited URL
+can't send an invalid request. It's passed to `validateSearch` directly (as a
+Standard Schema) rather than wrapped in `(search) => schema.parse(search)`,
+because the wrapped form loses the input type and `stripSearchParams` can no
+longer type-check against it. `stripSearchParams` keeps default values out of
+the URL: `/maintenance-records?page=0&pageSize=500&sortDir=asc` redirects to
+plain `/maintenance-records`. `loaderDeps` makes the loader re-run whenever
+the search params change:
 
-`app/src/routes/maintenance-records/index.tsx`
+`app/src/routes/maintenance-records/route.tsx`
 ```ts
-export const Route = createFileRoute('/maintenance-records/')({
-  validateSearch: (search) => listMaintenanceRecordsInputSchema.parse(search),
+const SEARCH_DEFAULTS = listMaintenanceRecordsInputSchema.parse({})
+
+export const Route = createFileRoute('/maintenance-records')({
+  validateSearch: listMaintenanceRecordsInputSchema,
+  search: {
+    middlewares: [stripSearchParams(SEARCH_DEFAULTS)],
+  },
   loaderDeps: ({ search }) => ({ filters: search }),
 ```
+
+The list is a **layout route** (`route.tsx`). `new.tsx` and `$id.edit.tsx`
+render through its `<Outlet/>` in a drawer beside the table, and they inherit
+its search params, so opening or closing the drawer keeps page, sort and
+filter. `index.tsx` renders nothing, and the drawer only opens when
+`useChildMatches` finds a child other than the index.
 
 The component reads the URL with `Route.useSearch()` and changes it with
 `Route.useNavigate()`, e.g. `navigate({ search: (prev) => ({ ...prev, page }) })`.
@@ -254,16 +305,74 @@ entry:
 ```
 
 The route loader prefetches with
-`context.queryClient.query({ ...maintenanceRecordQueries.list(deps.filters), staleTime: 'static' })`,
+`context.queryClient.query({ ...maintenanceRecordQueries.list(deps.filters), staleTime: 30_000 })`,
 and the component reads the same options with
 `useSuspenseQuery(maintenanceRecordQueries.list(search))`, so the data is
-already there on first render.
+already there on first render. It used to be `staleTime: 'static'`, but
+`'static'` ignores `invalidateQueries` (query-core's `isStaleByTime` returns
+"fresh" before it checks `isInvalidated`), so post-save refreshes never
+reached the loader.
 
 **Gotcha:** `placeholderData` (the "keep the old page visible while the next
 one loads" option) doesn't work with `useSuspenseQuery`. Instead, every
 `navigate` call is wrapped in `useTransition`'s `startTransition`. React keeps
 showing the current page while the next one loads, and `isPending` dims the
 table and disables Prev/Next.
+
+#### Mutations
+
+Mutations are plain `mutationOptions` factories in `*.mutations.ts`. The v5
+callbacks receive a trailing `context` holding `client`, so the file needs no
+`useQueryClient`. Cache work lives here; alerts, reset and navigation live in
+the form.
+
+- **Edit = cache patch with rollback.** `onMutate` cancels queries, snapshots
+  every list page and the detail entry, then patches the row in place. The
+  rollback runs in `onError` *and* in `onSuccess` when the server returned
+  `ok: false`, because a returned failure doesn't trigger `onError`.
+- **Create = ghost rows + invalidate.** The client can't know where a new row
+  lands in a server-sorted, paginated list, so nothing is written into list
+  caches. The list renders pending creates from `useMutationState` at half
+  opacity, and `onSettled` returns the invalidation so the mutation (and the
+  form's `isSubmitting`) stays pending through the refetch.
+
+`app/src/features/maintenance-records/maintenance-records.mutations.ts`
+```ts
+      onError: (_error, _vars, result, { client }) =>
+        restore(client, result?.snapshots),
+      // A returned failure doesn't trigger onError, so roll back here too.
+      onSuccess: (data, _vars, result, { client }) => {
+        if (!data.ok) restore(client, result.snapshots)
+      },
+      // Skip the refetch while other edits are still in flight, so one
+      // edit's refetch doesn't overwrite another's optimistic patch.
+      onSettled: (_data, _error, _vars, _result, { client }) => {
+        if (
+          client.isMutating({
+            mutationKey: ['maintenance-records', 'update'],
+          }) === 1
+        ) {
+          return client.invalidateQueries({ queryKey: ['maintenance-records'] })
+        }
+      },
+```
+
+`app/src/routes/maintenance-records/route.tsx`
+```ts
+  const ghostRows = useMutationState({
+    filters: {
+      mutationKey: ['maintenance-records', 'create'],
+      status: 'pending',
+    },
+    select: (mutation): GhostRow => ({
+      ...(mutation.state.variables as CreateMaintenanceRecordInput),
+      submittedAt: mutation.state.submittedAt,
+    }),
+  })
+```
+
+Ghost rows render in their own `<tbody>` above the virtualized one, keyed
+`ghost-<submittedAt>`, so the virtualizer's `getItemKey` is never disturbed.
 
 ### 5. TanStack Table (v9)
 
@@ -272,7 +381,7 @@ sort state, and you write the markup yourself. v9 makes you opt in to
 features: register them with `tableFeatures`, and use the result to type the
 column helper:
 
-`app/src/routes/maintenance-records/index.tsx`
+`app/src/routes/maintenance-records/route.tsx`
 ```ts
 const features = tableFeatures({ rowSortingFeature, columnSizingFeature })
 
@@ -308,7 +417,7 @@ the rows in view (plus 5 overscan rows) are in the DOM. The virtualizer lives in
 its own `MaintenanceRecordsTableBody` component, so scroll-driven re-renders
 don't reach the header, filter or pager.
 
-`app/src/routes/maintenance-records/index.tsx`
+`app/src/routes/maintenance-records/route.tsx`
 ```ts
   const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
     count: rows.length,
@@ -344,9 +453,160 @@ has `pageSize: z.number().int().min(1).max(2000).default(500)`. Virtualization
 makes large pages cheap to *render*, but the server still rejects anything
 above 2,000 rows per response. It never fetches everything.
 
+### 7. TanStack Form
+
+TanStack Form is a headless form state library: values, field meta (touched,
+blurred, default-value checks), validation per event, and submission state,
+held in a store you subscribe to with selectors.
+
+**How it's set up here:** a field kit built once in `src/components/form/`.
+`createFormHookContexts()` makes the contexts. `createFormHook()` registers the
+field and form components and returns `useAppForm`. Feature forms only write
+`form.AppField` + `<field.TextField/>`; only the kit reads `field.state`, so
+the v2 migration stays inside the kit.
+
+`app/src/components/form/form-kit.tsx`
+```ts
+export const { useAppForm, withForm } = createFormHook({
+  fieldContext,
+  formContext,
+  fieldComponents: {
+    TextField,
+    TextareaField,
+    NumberField,
+    DateField,
+    SelectField,
+  },
+  formComponents: { SubmitButton, FormAlert },
+})
+```
+
+**Validation timing:** `validationLogic: revalidateLogic()` +
+`validators: { onDynamic: schema }` validates on submit first, then live after
+the first submit. There's no form-level `onChange` schema (it re-renders every
+field on every keystroke). Errors show according to one helper:
+
+`app/src/components/form/should-show-error.ts`
+```ts
+  return !meta.isValid && (meta.isBlurred || submissionAttempts > 0)
+```
+
+**Form values vs server payload:** v1 infers form types from `defaultValues`,
+not the schema, and validation hands over the schema *input*. So
+`MaintenanceRecordFormValues = z.input<typeof maintenanceRecordFormSchema>`
+types the defaults, and submit calls `schema.parse(value)` to get the output.
+The form schema converts the three columns whose UI type differs from the DB
+type:
+
+| Form value | Server value |
+| --- | --- |
+| `cost` in dollars (`number \| null`, ≤ 2 decimals) | `costCents = Math.round(cost * 100)` |
+| `performedAt` as `YYYY-MM-DD` | `Date` (Start's serializer carries it as a real `Date`) |
+| `assetId: number \| null` (empty select) | positive int; `null` fails with "Choose an asset" |
+
+**Server errors:** the form's `onSubmitAsync` validator calls `mutateAsync`
+and maps the `ActionResult` onto `{ form, fields }`, so `fieldErrors` land on
+the fields and `formError` lands in `FormAlert`. A thrown error becomes a
+form-level message. Input is kept on failure.
+
+`app/src/features/maintenance-records/maintenance-record-form.tsx`
+```ts
+      onSubmitAsync: async ({ value }) => {
+        // Validation only hands over the schema *input*; parse for the output.
+        const payload = maintenanceRecordFormSchema.parse(value)
+        try {
+          const result = record
+            ? await updateMutation.mutateAsync({ id: record.id, ...payload })
+            : await createMutation.mutateAsync(payload)
+          if (!result.ok) return toFormErrors(result)
+          savedRef.current = result.data
+          return undefined
+        } catch (error) {
+          return thrownToFormErrors(error)
+        }
+      },
+```
+
+**Accessibility:** every control has a `<label htmlFor>`. When an error shows,
+the control gets `aria-invalid="true"` and `aria-describedby` pointing at the
+hint and the error text. Field errors are plain text; only `FormAlert` is
+`role="alert"`. `onSubmitInvalid` focuses the first `[aria-invalid="true"]`
+one frame later, after React has rendered it. The submit button is disabled
+only while `isSubmitting`, never by `canSubmit`, so pressing it always runs
+validation and moves focus.
+
+**Unsaved changes:** `useBlocker` blocks navigation (with a Stay / Leave
+prompt) while `!form.state.isDefaultValue`. The navigation after a successful
+save passes `ignoreBlocker: true`.
+
+**Gotchas:**
+
+- `@tanstack/react-form` is pinned to exactly `1.33.5`. Type changes ship as
+  patch releases, and the v2 alpha rewrites the API (validators, field reads,
+  `withForm`).
+- `isDirty` stays true after the user reverts a value. "Has unsaved changes"
+  is `!isDefaultValue`.
+- `canSubmit` is true on first render even when fields are invalid, which is
+  one more reason not to gate the button on it.
+- The form-level `onSubmitAsync` result must include a `fields` key (even
+  `{}`). Otherwise form-core stores the whole object as the form error.
+- After a save, `form.reset(saved, { keepDefaultValues: true })` plus moving
+  the defaults (held in `useState`) to the saved values works around #1798, so
+  `isDefaultValue` is true again.
+
+### 8. TanStack Pacer (debounced search)
+
+Pacer controls how often a function runs. Here it debounces the search box: the
+input keeps every keystroke in local state, and only the debounced call writes
+`q` to the URL. Typing a word causes one navigation and one server request, not
+one per character.
+
+`app/src/routes/maintenance-records/route.tsx`
+```ts
+  const searchDebouncer = useDebouncer(applySearch, {
+    wait: SEARCH_DEBOUNCE_MS,
+  })
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchText(event.target.value)
+    searchDebouncer.maybeExecute(event.target.value)
+  }
+```
+
+`applySearch` follows the same pattern as the status and asset filters:
+`startTransition`, reset the scroll container, then
+`navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })`. The input also
+follows the URL, so back/forward updates the box. The Clear button calls
+`searchDebouncer.cancel()` before navigating, so a pending keystroke can't land
+after it.
+
+`useDebouncer` is used instead of `useDebouncedCallback` because the callback
+hook returns a bare function with no `cancel()`.
+
+On the server, `q` matches description **or** technician. The schema caps it at
+100 characters, and `%`, `_` and `\` are escaped so a typed `%` matches itself
+instead of every row. Drizzle's `like()` can't express `ESCAPE`, so it's raw
+`sql`:
+
+`app/src/features/maintenance-records/maintenance-records.server.ts`
+```ts
+function matchesText(q: string) {
+  const pattern = containsPattern(q)
+  return or(
+    sql`${maintenanceRecords.description} LIKE ${pattern} ESCAPE '\\'`,
+    sql`${maintenanceRecords.technician} LIKE ${pattern} ESCAPE '\\'`,
+  )
+}
+```
+
+A leading-wildcard `LIKE` can't use an index. On the 80k seeded rows it takes
+about 15–25 ms for a common term and about 47 ms for a term with no hits (a
+full scan). That's fast enough, so there's no FTS5 index. The measurement is
+noted under Phase 7 in [`ROADMAP.md`](ROADMAP.md).
+
 ## How it fits together
 
-Loading `/maintenance-records?status=completed&sortBy=performedAt&sortDir=desc`:
+Loading `/maintenance-records?status=completed&q=bearings&sortBy=performedAt&sortDir=desc`:
 
 1. **Router:** `validateSearch` parses the URL with
    `listMaintenanceRecordsInputSchema` (defaults fill in `page: 0`, `pageSize: 500`).
@@ -356,20 +616,39 @@ Loading `/maintenance-records?status=completed&sortBy=performedAt&sortDir=desc`:
 4. **Start:** the `queryFn` calls `sfListMaintenanceRecords({ data: filters })`.
 5. **Start middleware:** `anyRole` → `authMiddleware` resolves the user and checks the role.
 6. **Start validator:** the same Zod schema parses `filters` again on the server.
-7. **Drizzle:** `MaintenanceRecords.list()` runs `WHERE status = ? ORDER BY performed_at DESC LIMIT 500 OFFSET 0`
-   and a `count()` query, using the indexes.
+7. **Drizzle:** `MaintenanceRecords.list()` runs
+   `WHERE status = ? AND (description LIKE ? OR technician LIKE ?) ORDER BY performed_at DESC LIMIT 500 OFFSET 0`
+   and a `count()` query with the same `WHERE`.
 8. **Query:** on SSR the result is dehydrated into the HTML. On the client,
    `useSuspenseQuery` reads it from the cache.
 9. **Table:** `useTable` builds the rows and headers from `data.rows` with no client-side sorting.
 10. **Virtual:** `useVirtualizer` mounts only the visible rows.
 
-Clicking a header, changing the status dropdown or paging calls `navigate`,
-which updates the URL and starts again at step 1.
+Clicking a header, changing the status or asset dropdown, or paging calls
+`navigate`, which updates the URL and starts again at step 1. Typing in the
+search box does the same, but only after a 300 ms pause.
+
+Saving an edit in the drawer (`/maintenance-records/42/edit`):
+
+1. **Form:** submit runs the `onDynamic` form schema on the client. If it
+   fails, focus moves to the first invalid field and nothing is sent.
+2. **Form:** `onSubmitAsync` parses the values to the server shape and calls
+   `mutateAsync({ id: 42, ...payload })`.
+3. **Query:** `onMutate` snapshots and patches row 42 in every cached list
+   page and in the detail entry, so the table behind the drawer updates
+   immediately.
+4. **Start:** `sfUpdateMaintenanceRecord` runs `technicianOrAdmin` middleware,
+   then the Zod validator, then `MaintenanceRecords.update()`.
+5. **Server:** checks the asset exists and the row was updated, returning
+   `ok(row)` or `fail(...)`.
+6. **Query:** on `ok: false` (or a thrown error) the snapshots are restored
+   and the errors land on the form. Otherwise `onSettled` invalidates
+   `['maintenance-records']`.
+7. **Query:** the visible list refetches and puts the row where the server
+   sorts it. The form resets to the saved values and the drawer closes.
 
 ## Not used yet
 
-- **TanStack Form:** create/edit forms with optimistic mutations (Phase 6).
-- **TanStack Pacer:** debounced free-text search (Phase 7).
 - **TanStack DB:** a synced reactive collection compared against the Query version (Phase 10).
 - **TanStack Store / Ranger:** cross-page selection state and range filters, added only if needed (Phase 11).
 
@@ -383,4 +662,6 @@ which updates the URL and starts again at step 1.
   [Query](https://tanstack.com/query/latest) ·
   [Table](https://tanstack.com/table/latest) ·
   [Virtual](https://tanstack.com/virtual/latest) ·
+  [Form](https://tanstack.com/form/latest) ·
+  [Pacer](https://tanstack.com/pacer/latest) ·
   [Drizzle](https://orm.drizzle.team/docs/overview)

@@ -41,6 +41,11 @@ you can explain the perf/security lesson it was meant to teach.
 - [ ] **Phase 7 — Search/filter UX**
   Tools: Router typed search params, Pacer
   Filters live in the URL. Debounce free-text search input.
+  - 2026-10-05: free-text `q` is `LIKE '%q%'` over description + technician
+    (leading wildcard, so no index). On 80k seeded rows `list()` takes
+    ~15–25 ms for a common term ("Cleaned", 11.5k hits) and ~47 ms for a term
+    with no hits ("zzzz"). The full scan is the slow case, not the match count.
+    Fast enough without FTS5. Typed `%`/`_` are escaped, so `q=%` matches 0 rows.
 
 - [ ] **Phase 8 — Dashboards**
   Tools: Query + SQL aggregation

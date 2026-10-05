@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq } from 'drizzle-orm'
+import { and, asc, count, desc, eq, or, sql } from 'drizzle-orm'
 import { db } from '#/db'
 import { assets, maintenanceRecords } from '#/db/schema'
 import { fail, ok } from '#/lib/action-result'
@@ -18,6 +18,12 @@ const sortColumns = {
   id: maintenanceRecords.id,
 } as const
 
+// Escapes LIKE wildcards so a typed `%` or `_` matches itself, not every row.
+// Paired with `ESCAPE '\'` in matchesText; drizzle's like() can't express it.
+function containsPattern(q: string): string {
+  return `%${q.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
+}
+
 // SQLite foreign keys aren't enforced here (no `PRAGMA foreign_keys`), so the
 // asset reference is checked explicitly before every write.
 async function assetExists(assetId: number): Promise<boolean> {
@@ -27,6 +33,16 @@ async function assetExists(assetId: number): Promise<boolean> {
     .where(eq(assets.id, assetId))
     .limit(1)
   return rows.length > 0
+}
+
+// A leading-wildcard LIKE can't use an index, so this scans whatever rows the
+// other filters leave. Fine at seed volume; FTS5 would be the next step.
+function matchesText(q: string) {
+  const pattern = containsPattern(q)
+  return or(
+    sql`${maintenanceRecords.description} LIKE ${pattern} ESCAPE '\\'`,
+    sql`${maintenanceRecords.technician} LIKE ${pattern} ESCAPE '\\'`,
+  )
 }
 
 export class MaintenanceRecords {
@@ -80,6 +96,7 @@ export class MaintenanceRecords {
       filters.assetId
         ? eq(maintenanceRecords.assetId, filters.assetId)
         : undefined,
+      filters.q ? matchesText(filters.q) : undefined,
     )
 
     const sortColumn = sortColumns[filters.sortBy ?? 'performedAt']

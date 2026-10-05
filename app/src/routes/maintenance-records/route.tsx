@@ -1,11 +1,13 @@
-import { useEffect, useRef, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { useMutationState, useSuspenseQuery } from '@tanstack/react-query'
 import {
   Link,
   Outlet,
   createFileRoute,
+  stripSearchParams,
   useChildMatches,
 } from '@tanstack/react-router'
+import { useDebouncer } from '@tanstack/react-pacer'
 import {
   columnSizingFeature,
   createColumnHelper,
@@ -20,6 +22,7 @@ import type {
   SortingState,
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { assetQueries } from '#/features/assets/assets.queries'
 import { maintenanceRecordQueries } from '#/features/maintenance-records/maintenance-records.queries'
 import { listMaintenanceRecordsInputSchema } from '#/features/maintenance-records/maintenance-records.schemas'
 import type {
@@ -28,19 +31,32 @@ import type {
   MaintenanceRecord,
 } from '#/features/maintenance-records/maintenance-records.types'
 
+// Parsed from {} so the stripped values are exactly the schema's defaults
+// (page, pageSize, sortDir — every other field is optional).
+const SEARCH_DEFAULTS = listMaintenanceRecordsInputSchema.parse({})
+
 // Layout route: the list stays mounted while child routes (new / edit) render
 // in a drawer beside it, so optimistic patches and ghost rows stay visible.
 export const Route = createFileRoute('/maintenance-records')({
-  validateSearch: (search) => listMaintenanceRecordsInputSchema.parse(search),
+  validateSearch: listMaintenanceRecordsInputSchema,
+  // Default values stay out of the URL; validateSearch fills them back in.
+  search: {
+    middlewares: [stripSearchParams(SEARCH_DEFAULTS)],
+  },
   loaderDeps: ({ search }) => ({ filters: search }),
   // Finite, not 'static': query-core's isStaleByTime returns false for
   // 'static' before it checks isInvalidated, so invalidateQueries after a
   // save would never make this loader refetch.
-  loader: ({ context, deps }) =>
-    context.queryClient.query({
-      ...maintenanceRecordQueries.list(deps.filters),
-      staleTime: 30_000,
-    }),
+  loader: async ({ context, deps }) => {
+    await Promise.all([
+      context.queryClient.query({
+        ...maintenanceRecordQueries.list(deps.filters),
+        staleTime: 30_000,
+      }),
+      // Feeds the asset filter, so it doesn't suspend on first render.
+      context.queryClient.ensureQueryData(assetQueries.options()),
+    ])
+  },
   component: MaintenanceRecordsList,
 })
 
@@ -144,6 +160,8 @@ function ghostCell(columnId: string, ghost: GhostRow) {
 // replaces it with each row's real rendered height once mounted.
 const ROW_HEIGHT_ESTIMATE = 40
 
+const SEARCH_DEBOUNCE_MS = 300
+
 function MaintenanceRecordsList() {
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -151,6 +169,7 @@ function MaintenanceRecordsList() {
   const tableContainerRef = useRef<HTMLDivElement>(null)
 
   const { data } = useSuspenseQuery(maintenanceRecordQueries.list(search))
+  const { data: assetOptions } = useSuspenseQuery(assetQueries.options())
 
   const ghostRows = useMutationState({
     filters: {
@@ -216,6 +235,56 @@ function MaintenanceRecordsList() {
     })
   }
 
+  const handleAssetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = event.target.value
+    startTransition(() => {
+      tableContainerRef.current?.scrollTo(0, 0)
+      navigate({
+        search: (prev) => ({
+          ...prev,
+          assetId: value ? Number(value) : undefined,
+          page: 0,
+        }),
+      })
+    })
+  }
+
+  // The input holds every keystroke; only the debounced call writes `q` to
+  // the URL, so a typed word is one navigation and one server request.
+  const [searchText, setSearchText] = useState(search.q ?? '')
+
+  const applySearch = (value: string) =>
+    startTransition(() => {
+      tableContainerRef.current?.scrollTo(0, 0)
+      navigate({
+        search: (prev) => ({
+          ...prev,
+          q: value.trim() || undefined,
+          page: 0,
+        }),
+      })
+    })
+
+  const searchDebouncer = useDebouncer(applySearch, {
+    wait: SEARCH_DEBOUNCE_MS,
+  })
+
+  // Back/forward or a link can change `q` without typing — follow the URL.
+  useEffect(() => {
+    setSearchText(search.q ?? '')
+  }, [search.q])
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchText(event.target.value)
+    searchDebouncer.maybeExecute(event.target.value)
+  }
+
+  const clearSearch = () => {
+    searchDebouncer.cancel()
+    setSearchText('')
+    applySearch('')
+  }
+
   const goToPage = (page: number) =>
     startTransition(() => {
       tableContainerRef.current?.scrollTo(0, 0)
@@ -239,22 +308,62 @@ function MaintenanceRecordsList() {
         </Link>
       </div>
 
-      <div className="mt-4">
-        <label htmlFor="status-filter" className="mr-2">
-          Status
-        </label>
-        <select
-          id="status-filter"
-          value={search.status ?? ''}
-          onChange={handleStatusChange}
-        >
-          <option value="">All</option>
-          {STATUS_OPTIONS.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
+      <div className="mt-4 flex flex-wrap items-center gap-6">
+        <div>
+          <label htmlFor="search-filter" className="mr-2">
+            Search
+          </label>
+          <input
+            id="search-filter"
+            type="search"
+            value={searchText}
+            onChange={handleSearchChange}
+            placeholder="Description or technician"
+            maxLength={100}
+            className="border px-2 py-1"
+          />
+          {searchText ? (
+            <button type="button" onClick={clearSearch} className="ml-2">
+              Clear
+            </button>
+          ) : null}
+        </div>
+
+        <div>
+          <label htmlFor="status-filter" className="mr-2">
+            Status
+          </label>
+          <select
+            id="status-filter"
+            value={search.status ?? ''}
+            onChange={handleStatusChange}
+          >
+            <option value="">All</option>
+            {STATUS_OPTIONS.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="asset-filter" className="mr-2">
+            Asset
+          </label>
+          <select
+            id="asset-filter"
+            value={search.assetId ?? ''}
+            onChange={handleAssetChange}
+          >
+            <option value="">All</option>
+            {assetOptions.map((asset) => (
+              <option key={asset.id} value={asset.id}>
+                {`${asset.name} (#${asset.id})`}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="mt-6 flex gap-6">
@@ -322,12 +431,19 @@ function MaintenanceRecordsList() {
                 ))}
               </tbody>
             ) : null}
-            <MaintenanceRecordsTableBody
-              table={table}
-              tableContainerRef={tableContainerRef}
-              isPending={isPending}
-            />
+            {data.rows.length > 0 ? (
+              <MaintenanceRecordsTableBody
+                table={table}
+                tableContainerRef={tableContainerRef}
+                isPending={isPending}
+              />
+            ) : null}
           </table>
+          {data.rows.length === 0 && ghostRows.length === 0 ? (
+            <p className="p-4" style={{ opacity: isPending ? 0.5 : 1 }}>
+              No records match these filters
+            </p>
+          ) : null}
         </div>
 
         {isDrawerOpen ? (
@@ -348,7 +464,9 @@ function MaintenanceRecordsList() {
         >
           Prev
         </button>
-        <span>Page {search.page + 1}</span>
+        <span>
+          Page {search.page + 1} · {data.total.toLocaleString('en-US')} records
+        </span>
         <button
           type="button"
           disabled={isLastPage || isPending}

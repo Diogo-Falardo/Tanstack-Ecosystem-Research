@@ -15,3 +15,17 @@ body {
   margin: 0;
 }
 
+
+/* Home page enter: fade + small rise, staggered via inline animation-delay. */
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-rise {
+    animation: home-rise 320ms ease-out both;
+  }
+}

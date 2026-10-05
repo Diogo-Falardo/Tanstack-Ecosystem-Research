@@ -51,6 +51,18 @@ you can explain the perf/security lesson it was meant to teach.
   Tools: Query + SQL aggregation
   Cost-over-time chart, breakdown by asset/status. Aggregation happens in
   SQL (`GROUP BY`/`SUM`), not in JS after fetching every row.
+  - 2026-10-05: `/dashboard` runs three server functions (cost by month,
+    by status, top 10 assets) over a `months` window (3/6/12/36). Only
+    aggregate rows leave the DB: at most 36 + 4 + 10. Timed over HTTP on 80k
+    seeded rows (dev server, cold / warm median): 12 months: by-month 83 / 31 ms,
+    by-status 27 / 28 ms, top-assets 28 / 27 ms. 36 months: 63–68 ms each.
+    Month series plan:
+    `SEARCH maintenance_records USING INDEX idx_maintenance_performed_at (performed_at>? AND performed_at<?) | USE TEMP B-TREE FOR GROUP BY`.
+    Both window bounds use the index. Without the window it's a full `SCAN`.
+    The window also moved top-assets off `idx_maintenance_asset_id` onto the
+    date index. A covering `(performed_at, cost_cents, …)` index halved the
+    month series in a raw-SQL test (~18 → 9 ms), but it isn't worth adding
+    at this volume. Months bucket in UTC (`strftime(..., 'unixepoch')`).
 
 - [ ] **Phase 9 — Roles/security pass**
   Tools: Start middleware

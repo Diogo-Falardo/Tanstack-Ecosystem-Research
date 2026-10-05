@@ -17,6 +17,14 @@ function restore(client: QueryClient, snapshots: Snapshots | undefined) {
   snapshots?.forEach(([queryKey, data]) => client.setQueryData(queryKey, data))
 }
 
+// Records feed both the list and the dashboard aggregates.
+function invalidateRecordViews(client: QueryClient) {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: ['maintenance-records'] }),
+    client.invalidateQueries({ queryKey: ['dashboard'] }),
+  ])
+}
+
 // Cache work lives here; UI work (alerts, reset, navigate) lives in the form.
 export const maintenanceRecordMutations = {
   // No setQueryData into list pages: the client can't know where a new row
@@ -29,7 +37,7 @@ export const maintenanceRecordMutations = {
         sfCreateMaintenanceRecord({ data }),
       // Returned so the mutation stays pending through the refetch.
       onSettled: (_data, _error, _variables, _result, { client }) =>
-        client.invalidateQueries({ queryKey: ['maintenance-records'] }),
+        invalidateRecordViews(client),
     }),
 
   update: () =>
@@ -81,7 +89,7 @@ export const maintenanceRecordMutations = {
             mutationKey: ['maintenance-records', 'update'],
           }) === 1
         ) {
-          return client.invalidateQueries({ queryKey: ['maintenance-records'] })
+          return invalidateRecordViews(client)
         }
       },
     }),

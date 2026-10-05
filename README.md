@@ -14,7 +14,7 @@ matters is the data shape: lots of rows, aggregations and user roles.
 3. Every server function validates its input with Zod and checks authorization itself.
 4. Aggregation (sums, counts, group-by) happens in SQL, not in JavaScript.
 
-**Progress:** Phases 1–7 of [`ROADMAP.md`](ROADMAP.md) are built:
+**Progress:** Phases 1–8 of [`ROADMAP.md`](ROADMAP.md) are built:
 
 | Phase | What it added | Tool |
 | --- | --- | --- |
@@ -25,8 +25,9 @@ matters is the data shape: lots of rows, aggregations and user roles.
 | 5 | Virtualized body for pages of up to 2,000 rows | Virtual |
 | 6 | Create/edit forms with optimistic updates | Form, Query |
 | 7 | Every filter in the URL, debounced free-text search | Router, Pacer |
+| 8 | Cost dashboard, every number a SQL `GROUP BY` | Query, Drizzle |
 
-The next phase is 8 (dashboards with SQL aggregation).
+The next phase is 9 (real auth and roles).
 
 ## Stack
 
@@ -64,7 +65,8 @@ bun run dev
 Then open http://localhost:3000. The home page links to every screen:
 the records list (with preset views such as "Completed" or "Newest first"),
 new record, new asset, and edit-by-ID for records and assets. A top bar on
-every page links back to it.
+every page links to the home page, the cost dashboard (`/dashboard`) and the
+records list.
 
 `DATABASE_URL` is read by `drizzle.config.ts`, `scripts/db.init.ts` (both load
 `.env.local`, then `.env`) and by `src/db/index.ts` at runtime. `*.db` files and
@@ -98,14 +100,17 @@ app/
     ├── components/form/     # TanStack Form field kit (useAppForm, fields, alert, submit)
     ├── features/
     │   ├── assets/          # + asset-form.tsx
+    │   ├── dashboard/       # read-only aggregates: no mutations, no form
     │   └── maintenance-records/   # + maintenance-record-form.tsx
     ├── lib/
-    │   └── action-result.ts # { ok, data } | { ok: false, formError, fieldErrors }
+    │   ├── action-result.ts # { ok, data } | { ok: false, formError, fieldErrors }
+    │   └── format.ts        # formatCost: integer cents → USD string
     ├── middleware/
     │   └── auth.middleware.ts
     ├── routes/
     │   ├── __root.tsx             # document shell + top nav bar
     │   ├── index.tsx              # / home: links to every route
+    │   ├── dashboard.tsx          # /dashboard: cost charts and breakdowns
     │   ├── assets/
     │   │   ├── new.tsx            # /assets/new
     │   │   └── $id.edit.tsx       # /assets/$id/edit
@@ -129,6 +134,9 @@ Each feature uses the same file split. Using `maintenance-records` as the exampl
 | `*.queries.ts` | `queryOptions` factories that call the server functions (`list`, `detail`, asset `options`) |
 | `*.mutations.ts` | `mutationOptions` factories: cache work (optimistic patch, rollback, invalidation) |
 | `*-form.tsx` | The feature form, built from the shared field kit |
+
+`dashboard` only reads data, so it has just `schemas`, `types`, `server`,
+`function` and `queries`.
 
 Imports use the `#/*` alias, which maps to `app/src/*` (the `imports` field in
 `app/package.json`), e.g. `import { db } from '#/db'`.
@@ -352,10 +360,15 @@ the form.
             mutationKey: ['maintenance-records', 'update'],
           }) === 1
         ) {
-          return client.invalidateQueries({ queryKey: ['maintenance-records'] })
+          return invalidateRecordViews(client)
         }
       },
 ```
+
+`invalidateRecordViews` invalidates both `['maintenance-records']` and
+`['dashboard']`, because a saved record changes the dashboard's totals too.
+Asset mutations invalidate `['assets']` and `['dashboard']` the same way,
+since asset names appear in the top-assets panel.
 
 `app/src/routes/maintenance-records/route.tsx`
 ```ts
@@ -604,6 +617,91 @@ about 15–25 ms for a common term and about 47 ms for a term with no hits (a
 full scan). That's fast enough, so there's no FTS5 index. The measurement is
 noted under Phase 7 in [`ROADMAP.md`](ROADMAP.md).
 
+### 9. SQL aggregation + Query (dashboard)
+
+`/dashboard` shows total cost and record count, cost per month, cost by
+record status and the 10 most expensive assets, over the last 3, 6, 12 or 36
+months. Every number is a `GROUP BY` / `SUM` / `COUNT` in SQL (ground rule 4).
+The server returns at most 36 + 4 + 10 aggregate rows and never sends
+individual records to the browser.
+
+The period is the `months` search param (`?months=36`). Its schema is a closed
+set, so a URL can't request an arbitrary window, and the route reuses it for
+`validateSearch` and `stripSearchParams`, as the records list does:
+
+`app/src/features/dashboard/dashboard.schemas.ts`
+```ts
+export const dashboardInputSchema = z.object({
+  months: z
+    .union([z.literal(3), z.literal(6), z.literal(12), z.literal(36)])
+    .default(12),
+})
+```
+
+All three queries share one window, computed in SQL. The lower bound is what
+lets SQLite use `idx_maintenance_performed_at` instead of scanning the table.
+`performed_at` is stored as unix seconds, so months are bucketed with
+`strftime(..., 'unixepoch')`, which is UTC. Drizzle has no date-bucket helper,
+so that part is raw `sql`:
+
+`app/src/features/dashboard/dashboard.server.ts`
+```ts
+const costSum = sql<number>`sum(${maintenanceRecords.costCents})`.mapWith(
+  Number,
+)
+const monthBucket = sql<string>`strftime('%Y-%m', ${maintenanceRecords.performedAt}, 'unixepoch')`
+
+function inWindow(months: number) {
+  const startOffset = `-${months - 1} months`
+  return and(
+    gte(
+      maintenanceRecords.performedAt,
+      sql`unixepoch('now', 'start of month', ${startOffset})`,
+    ),
+    lt(
+      maintenanceRecords.performedAt,
+      sql`unixepoch('now', 'start of month', '+1 month')`,
+    ),
+  )
+}
+```
+
+`Dashboard.costByMonth()` groups by `monthBucket`, then fills months with no
+records as zero, so the chart always has exactly `months` bars. That merge
+runs over at most 36 aggregate rows, not over records. `costByStatus()`
+groups by `status`, and `topAssets()` joins `assets` and groups by
+`asset_id`, ordered by `costSum desc` with `limit 10`.
+
+Each panel is its own server function and its own `queryOptions`, keyed
+`['dashboard', '<name>', input]` with a 60 s `staleTime`. That way each panel
+caches separately and one `['dashboard']` prefix invalidates them all. The
+loader prefetches all three with `queryClient.query(...)` (which, unlike
+`ensureQueryData`, refetches invalidated data). The component reads them with
+`useSuspenseQuery`. Changing the period calls `navigate` inside
+`startTransition`, and the panels dim while `isPending`.
+
+The page:
+
+- **Totals:** summed from the at most 4 status rows.
+- **Cost over time:** a CSS bar chart with no chart library. Each bar has a
+  `title` tooltip, and a visually hidden `<table>` gives screen readers the
+  same data.
+- **By status:** each row links to `/maintenance-records?status=…`.
+- **Top assets:** each name links to `/maintenance-records?assetId=…`, with an
+  Edit link to the asset.
+
+On the 80k seeded rows, each server function takes about 27–31 ms over HTTP
+for 12 months and 55–68 ms for 36 months (warm). The measurements and query
+plan are noted under Phase 8 in [`ROADMAP.md`](ROADMAP.md).
+
+**Gotchas:**
+
+- Drizzle's `sum()` comes back as a string on SQLite. `sql<number>` plus
+  `.mapWith(Number)` gives a real number.
+- The dashboard server functions use `anyRole`, with a `TODO(Phase 9)`. Cost
+  totals are sensitive, but the records list already shows `costCents` to
+  every role, so both get locked down together in Phase 9.
+
 ## How it fits together
 
 Loading `/maintenance-records?status=completed&q=bearings&sortBy=performedAt&sortDir=desc`:
@@ -643,7 +741,7 @@ Saving an edit in the drawer (`/maintenance-records/42/edit`):
    `ok(row)` or `fail(...)`.
 6. **Query:** on `ok: false` (or a thrown error) the snapshots are restored
    and the errors land on the form. Otherwise `onSettled` invalidates
-   `['maintenance-records']`.
+   `['maintenance-records']` and `['dashboard']`.
 7. **Query:** the visible list refetches and puts the row where the server
    sorts it. The form resets to the saved values and the drawer closes.
 

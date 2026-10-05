@@ -23,6 +23,7 @@ import type {
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { assetQueries } from '#/features/assets/assets.queries'
+import { formatCost } from '#/lib/format'
 import { maintenanceRecordQueries } from '#/features/maintenance-records/maintenance-records.queries'
 import { listMaintenanceRecordsInputSchema } from '#/features/maintenance-records/maintenance-records.schemas'
 import type {
@@ -66,13 +67,6 @@ const STATUS_OPTIONS = [
   'completed',
   'cancelled',
 ] as const
-
-function formatCost(costCents: number) {
-  return (costCents / 100).toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  })
-}
 
 // No sortedRowModel registered — the server sorts (manualSorting below), so
 // this table never re-sorts the page it's given, only reports/relays intent.

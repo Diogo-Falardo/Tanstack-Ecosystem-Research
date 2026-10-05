@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as MaintenanceRecordsRouteRouteImport } from './routes/maintenance-records/route'
 import { Route as AssetsNewRouteImport } from './routes/assets/new'
 import { Route as MaintenanceRecordsIndexRouteImport } from './routes/maintenance-records/index'
@@ -20,6 +21,11 @@ import { Route as MaintenanceRecordsIdEditRouteImport } from './routes/maintenan
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MaintenanceRecordsRouteRoute = MaintenanceRecordsRouteRouteImport.update({
@@ -57,6 +63,7 @@ const MaintenanceRecordsIdEditRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/maintenance-records': typeof MaintenanceRecordsRouteRouteWithChildren
+  '/dashboard': typeof DashboardRoute
   '/assets/new': typeof AssetsNewRoute
   '/maintenance-records/new': typeof MaintenanceRecordsNewRoute
   '/maintenance-records/': typeof MaintenanceRecordsIndexRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
   '/assets/new': typeof AssetsNewRoute
   '/maintenance-records/new': typeof MaintenanceRecordsNewRoute
   '/maintenance-records': typeof MaintenanceRecordsIndexRoute
@@ -75,6 +83,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/maintenance-records': typeof MaintenanceRecordsRouteRouteWithChildren
+  '/dashboard': typeof DashboardRoute
   '/assets/new': typeof AssetsNewRoute
   '/maintenance-records/new': typeof MaintenanceRecordsNewRoute
   '/maintenance-records/': typeof MaintenanceRecordsIndexRoute
@@ -86,6 +95,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/maintenance-records'
+    | '/dashboard'
     | '/assets/new'
     | '/maintenance-records/new'
     | '/maintenance-records/'
@@ -94,6 +104,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/dashboard'
     | '/assets/new'
     | '/maintenance-records/new'
     | '/maintenance-records'
@@ -103,6 +114,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/maintenance-records'
+    | '/dashboard'
     | '/assets/new'
     | '/maintenance-records/new'
     | '/maintenance-records/'
@@ -113,6 +125,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   MaintenanceRecordsRouteRoute: typeof MaintenanceRecordsRouteRouteWithChildren
+  DashboardRoute: typeof DashboardRoute
   AssetsNewRoute: typeof AssetsNewRoute
   AssetsIdEditRoute: typeof AssetsIdEditRoute
 }
@@ -124,6 +137,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/maintenance-records': {
@@ -192,6 +212,7 @@ const MaintenanceRecordsRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   MaintenanceRecordsRouteRoute: MaintenanceRecordsRouteRouteWithChildren,
+  DashboardRoute: DashboardRoute,
   AssetsNewRoute: AssetsNewRoute,
   AssetsIdEditRoute: AssetsIdEditRoute,
 }

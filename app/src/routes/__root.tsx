@@ -79,6 +79,13 @@ function TopBar() {
           Ops Console
         </Link>
         <Link
+          to="/dashboard"
+          className={NAV_LINK}
+          activeProps={{ className: 'bg-neutral-100 text-neutral-900' }}
+        >
+          Dashboard
+        </Link>
+        <Link
           to="/maintenance-records"
           className={NAV_LINK}
           activeProps={{ className: 'bg-neutral-100 text-neutral-900' }}

@@ -14,7 +14,7 @@ matters is the data shape: lots of rows, aggregations and user roles.
 3. Every server function validates its input with Zod and checks authorization itself.
 4. Aggregation (sums, counts, group-by) happens in SQL, not in JavaScript.
 
-**Progress:** Phases 1–10 of [`ROADMAP.md`](ROADMAP.md) are built:
+**Progress:** All 11 phases of [`ROADMAP.md`](ROADMAP.md) are built:
 
 | Phase | What it added | Tool |
 | --- | --- | --- |
@@ -28,8 +28,7 @@ matters is the data shape: lots of rows, aggregations and user roles.
 | 8 | Cost dashboard, every number a SQL `GROUP BY` | Query, Drizzle |
 | 9 | Login, roles, route guards + server-function guards, cost hidden from viewers | Start middleware |
 | 10 | Asset status board built twice, Query polling vs a reactive collection | Query, DB |
-
-Phase 11 (Store, Ranger) is added only when a concrete need shows up.
+| 11 | Cost and month range sliders; selection kept across pages + bulk status change | Ranger, Store |
 
 ## Stack
 
@@ -42,6 +41,8 @@ Phase 11 (Store, Ranger) is added only when a concrete need shows up.
 | Virtualization | `@tanstack/react-virtual` `^3.14.13` |
 | Forms | `@tanstack/react-form` `1.33.5` (pinned exactly) |
 | Debouncing | `@tanstack/react-pacer` `^0.24.1` |
+| Range sliders | `@tanstack/react-ranger` `^0.0.5` (declares React ≤18 as a peer; runs on React 19) |
+| Client state | `@tanstack/react-store` `^0.11.2` |
 | Reactive collections | `@tanstack/react-db` `^0.5.3`, `@tanstack/query-db-collection` `^1.3.4` |
 | Data | SQLite via `better-sqlite3` + `drizzle-orm` / `drizzle-kit` |
 | Validation | `zod` `^4`, `drizzle-zod` |
@@ -79,9 +80,9 @@ users out everywhere.
 
 | Email | Role | Can |
 | --- | --- | --- |
-| `admin@example.com` | admin | Everything: records with costs, create/edit records, create/edit assets, change asset status on the boards, `/dashboard` |
-| `tech@example.com` | technician | Records with costs, create/edit records, read-only asset boards. No asset forms, no dashboard |
-| `viewer@example.com` | viewer | Read the records list and the asset boards. Cost comes back as `null` and the Cost column is hidden |
+| `admin@example.com` | admin | Everything: records with costs, create/edit records, bulk status change, create/edit assets, change asset status on the boards, `/dashboard` |
+| `tech@example.com` | technician | Records with costs, create/edit records, bulk status change, read-only asset boards. No asset forms, no dashboard |
+| `viewer@example.com` | viewer | Read the records list and the asset boards. Cost comes back as `null`, the Cost column and cost slider are hidden, and a cost filter is refused (403) |
 
 There is no sign-up or user-management screen. To add a user or change a
 role, edit the `users` table (e.g. `bun run db:studio`) or `scripts/seed-users.ts`.
@@ -131,12 +132,14 @@ app/
     ├── db/
     │   ├── index.ts         # drizzle(better-sqlite3) client
     │   └── schema.ts        # tables (users, assets, maintenance_records), indexes, relations
-    ├── components/form/     # TanStack Form field kit (useAppForm, fields, alert, submit)
+    ├── components/
+    │   ├── form/            # TanStack Form field kit (useAppForm, fields, alert, submit)
+    │   └── range-slider.tsx # two-handle slider on TanStack Ranger
     ├── features/
     │   ├── assets/          # + asset-form.tsx, asset-status-board.tsx, assets.collection.ts (TanStack DB)
     │   ├── auth/            # login/logout/current user + login-form.tsx
     │   ├── dashboard/       # read-only aggregates: no mutations, no form
-    │   └── maintenance-records/   # + maintenance-record-form.tsx
+    │   └── maintenance-records/   # + maintenance-record-form.tsx, maintenance-records.selection.ts (Store)
     ├── lib/
     │   ├── action-result.ts # { ok, data } | { ok: false, formError, fieldErrors }
     │   ├── format.ts        # formatCost: integer cents → USD string
@@ -181,6 +184,7 @@ Each feature uses the same file split. Using `maintenance-records` as the exampl
 | `*.mutations.ts` | `mutationOptions` factories: cache work (optimistic patch, rollback, invalidation) |
 | `*-form.tsx` | The feature form, built from the shared field kit |
 | `*.collection.ts` | `assets` only: the TanStack DB collection factory, which calls the same server functions |
+| `*.selection.ts` | `maintenance-records` only: the TanStack Store selection actions and context |
 
 `dashboard` only reads data, so it has just `schemas`, `types`, `server`,
 `function` and `queries`. `auth` has no `list`/`get`: its server class is
@@ -277,9 +281,9 @@ export const adminOnly = requireRole(['admin'])
 
 | Server function | Guard |
 | --- | --- |
-| `sfListMaintenanceRecords` | `anyRole`; `costCents` is `null` for viewers |
+| `sfListMaintenanceRecords` | `anyRole`; `costCents` is `null` for viewers, and a viewer sending `costMin`/`costMax` gets 403 |
 | `sfGetMaintenanceRecord` (edit drawer) | `technicianOrAdmin` |
-| `sfCreateMaintenanceRecord`, `sfUpdateMaintenanceRecord` | `technicianOrAdmin` |
+| `sfCreateMaintenanceRecord`, `sfUpdateMaintenanceRecord`, `sfBulkSetMaintenanceRecordStatus` | `technicianOrAdmin` |
 | `sfGetAsset`, `sfListAssets`, `sfListAssetOptions` | `anyRole` |
 | `sfCreateAsset`, `sfUpdateAsset` | `adminOnly` |
 | `sfDashboardCostByMonth` / `ByStatus` / `TopAssets` | `adminOnly` |
@@ -308,8 +312,9 @@ declares a typed context, so every loader can use `context.queryClient`:
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
 ```
 
-The list page keeps **every** filter in the URL: page, sort, status, asset
-and the free-text search `q`. The same Zod schema that the server function
+The list page keeps **every** filter in the URL: page, sort, status, asset,
+the free-text search `q`, and the cost and month ranges (`costMin`/`costMax`
+in cents, `fromMonth`/`toMonth` as UTC `YYYY-MM`). The same Zod schema that the server function
 validates against also validates the search params, so a hand-edited URL
 can't send an invalid request. It's passed to `validateSearch` directly (as a
 Standard Schema) rather than wrapped in `(search) => schema.parse(search)`,
@@ -470,7 +475,9 @@ const columnHelper = createColumnHelper<typeof features, MaintenanceRecordRow>()
 ```
 
 There are two column arrays: `viewerColumns`, and `staffColumns`, which adds
-Cost and the Edit link. The table picks one by role.
+a selection checkbox, Cost and the Edit link. The table picks one by role.
+Only sortable headers render as `<button>`s. A disabled button would swallow
+clicks on the select-page checkbox inside it.
 
 **The key point:** no sorted row model is registered, and the table uses
 `manualSorting: true`. Clicking a sortable header (`status` or `performedAt`)
@@ -927,6 +934,76 @@ details under Phase 10 in [`ROADMAP.md`](ROADMAP.md)):
 - A collection's `select` extracts rows. It isn't Query's observer `select`,
   and `placeholderData` isn't supported.
 
+### 12. TanStack Ranger + Store (range filters, cross-page selection)
+
+Phase 11 adds both libraries to the records list, each for one concrete need.
+
+**Ranger: cost and month ranges.** `components/range-slider.tsx` wraps
+`useRanger` in a two-handle slider. Ranger is headless and ships no ARIA, so
+the component gives each handle `role="slider"`, a label and
+`aria-valuenow`/`aria-valuetext`. Staff get a Cost slider ($0–$5,000, $50 steps).
+Everyone gets a Performed slider over the last 36 UTC months. A handle at its
+edge means "no bound", so the default position keeps the URL clean, and
+records outside the slider's range still show up.
+
+A drag commits once, on release. Arrow keys commit on every press, so both
+sliders write the URL through a Pacer `useDebouncer` (300 ms), the same as the
+search box. The server applies the ranges in the same `WHERE`:
+
+`app/src/features/maintenance-records/maintenance-records.server.ts`
+```ts
+      filters.costMin !== undefined
+        ? gte(maintenanceRecords.costCents, filters.costMin)
+        : undefined,
+      // … costMax with lte
+      filters.fromMonth
+        ? gte(maintenanceRecords.performedAt, monthStart(filters.fromMonth))
+        : undefined,
+      filters.toMonth
+        ? lt(maintenanceRecords.performedAt, monthStart(filters.toMonth, 1))
+        : undefined,
+```
+
+The month range seeks on `idx_maintenance_performed_at`. `cost_cents` has no
+index, so its count is a full scan, about 15 ms on 80k rows, which isn't
+enough to justify an index. The list schema `.refine`s that min ≤ max.
+
+Viewers never see cost, so they can't filter by it either. Otherwise they
+could binary-search any record's cost from `total`. `sfListMaintenanceRecords`
+returns 403 when a viewer sends `costMin` or `costMax`.
+
+**Store: selection across pages.** Staff can tick records, page or sort, and
+keep ticking. Then they can set one status on all of them with a single
+request. The selection is a Store of `{ ids: ReadonlySet<number> }` with
+`toggle` / `setMany` / `clear` actions, capped at 1000 ids. It's created with
+`useCreateStore` in the list layout component, never at module scope (module
+state is shared by every SSR request). The layout stays mounted across page,
+sort and drawer changes and unmounts on logout. Cells are module-level column
+definitions, so they reach the store through `createStoreContext`. Each one
+subscribes to its own id:
+
+`app/src/routes/_authed/maintenance-records/route.tsx`
+```ts
+function SelectRowCell({ id }: { id: number }) {
+  const { selection } = useSelection()
+  const checked = useSelector(selection, (state) => state.ids.has(id))
+```
+
+Toggling one checkbox re-renders that cell, the select-page header checkbox
+and the toolbar, and nothing in the 500-row table. The selection clears when
+any filter changes, so a bulk action can't hit rows the user no longer sees.
+Page and sort changes keep it.
+
+**Apply** calls `sfBulkSetMaintenanceRecordStatus` (`technicianOrAdmin`, Zod
+caps `ids` at 1000), which runs one `UPDATE … WHERE id IN (…)` and returns
+`ok({ updated })`. If none of the ids exist anymore, it returns a
+`formError`. The mutation isn't optimistic, because most selected rows sit on
+pages that aren't in the cache. `onSettled` invalidates
+`['maintenance-records']` and `['dashboard']`.
+
+Measurements and surprises are noted under Phase 11 in
+[`ROADMAP.md`](ROADMAP.md).
+
 ## How it fits together
 
 Loading `/maintenance-records?status=completed&q=bearings&sortBy=performedAt&sortDir=desc`:
@@ -954,7 +1031,8 @@ Loading `/maintenance-records?status=completed&q=bearings&sortBy=performedAt&sor
 
 Clicking a header, changing the status or asset dropdown, or paging calls
 `navigate`, which updates the URL and starts again at step 1. Typing in the
-search box does the same, but only after a 300 ms pause.
+search box or moving a range slider does the same, but only after a 300 ms
+pause.
 
 Saving an edit in the drawer (`/maintenance-records/42/edit`):
 
@@ -975,10 +1053,6 @@ Saving an edit in the drawer (`/maintenance-records/42/edit`):
 7. **Query:** the visible list refetches and puts the row where the server
    sorts it. The form resets to the saved values and the drawer closes.
 
-## Not used yet
-
-- **TanStack Store / Ranger:** cross-page selection state and range filters, added only if needed (Phase 11).
-
 ## Further reading
 
 - [`CONTEXT.md`](CONTEXT.md): why this project exists, the stack, ground rules
@@ -991,5 +1065,7 @@ Saving an edit in the drawer (`/maintenance-records/42/edit`):
   [Virtual](https://tanstack.com/virtual/latest) ·
   [Form](https://tanstack.com/form/latest) ·
   [Pacer](https://tanstack.com/pacer/latest) ·
+  [Ranger](https://tanstack.com/ranger/latest) ·
+  [Store](https://tanstack.com/store/latest) ·
   [DB](https://tanstack.com/db/latest) ·
   [Drizzle](https://orm.drizzle.team/docs/overview)

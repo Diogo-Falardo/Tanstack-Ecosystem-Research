@@ -158,6 +158,57 @@ you can explain the perf/security lesson it was meant to teach.
 - [ ] **Phase 11 — (as needed) Store, Ranger**
   Add only when a concrete need shows up — e.g. Store for multi-select state
   across paginated pages, Ranger for a cost/date range filter.
+  - 2026-10-05: **Ranger** (`@tanstack/react-ranger` 0.0.5) drives a cost
+    slider (staff only) and a 36-month "performed" slider on the records list.
+    Both write `costMin`/`costMax` (cents) and `fromMonth`/`toMonth` (UTC
+    `YYYY-MM`) to the URL. They're validated by the shared list schema and
+    applied in SQL. Measured on 80k rows (dev server, HTTP, first / warm
+    median of 20, 25-row page):
+    - Jan–Mar 2026: 6,716 rows, 50 / 9 ms.
+      `SEARCH … USING COVERING INDEX idx_maintenance_performed_at (performed_at>? AND performed_at<?)`.
+    - Cost $1k–$2k: 16,136 rows, 55 / 15 ms. The count is a full `SCAN`
+      (`cost_cents` has no index). The page query walks the date index for the
+      sort order and checks cost on each row.
+    - Both: 1,387 rows, 51 / 12 ms. It seeks on the date index and filters cost
+      on the way.
+    Totals match direct SQL counts. No cost index: 15 ms doesn't justify one.
+    Surprises:
+    - Ranger declares React ≤18 as a peer (bun warns), but it ran on React
+      19.3 with no errors. It ships no ARIA, roles, or tabIndex, so the slider
+      component adds them.
+    - A drag commits once, on release. Arrow keys commit on *every* press.
+      Debounced through Pacer, 5 quick presses made 1 list request.
+    - Cost hiding had a hole: a viewer filtering by cost could binary-search
+      any record's cost from `total`, even though `costCents` is null for them.
+      `sfListMaintenanceRecords` now returns 403 when a viewer sends a cost
+      bound (checked). The month range stays open to every role.
+    - Zod 4's object `.refine` (min ≤ max) leaves the schema a `ZodObject`, so
+      `validateSearch` and `parse({})` for `stripSearchParams` defaults work
+      unchanged.
+  - 2026-10-05: **Store** (`@tanstack/react-store` 0.11.2, already present
+    transitively through Router/Form/Table/Pacer) holds a checkbox selection of
+    record ids. It's created with `useCreateStore` in the list layout
+    component, not at module scope (module state is shared across SSR
+    requests). Bulk "set status" goes through `sfBulkSetMaintenanceRecordStatus`
+    (`technicianOrAdmin`, max 1000 ids, one `UPDATE … WHERE id IN (…)`).
+    - Re-render scope, counted from React's commit hook in headless Chromium:
+      toggling one checkbox re-rendered 1 `SelectRowCell`, the page header
+      checkbox, and the toolbar. None of the 500-row table or list component.
+      Each cell reads `useSelector(store, s => s.ids.has(id))`. A
+      `useState<Set>` in the list component would re-render the whole table
+      body on every toggle. That isn't measured here, it follows from where the
+      state would live.
+    - The selection survived Next page and a sort change. Select-page took 3 →
+      503. A status filter change cleared it, so a bulk action can't hit rows
+      the user can no longer see. Logout unmounts the layout and drops the
+      store (by construction, not tested).
+    - Bulk endpoint: 1000 ids, 68 ms first / 24 ms median of 5. Viewer → 403.
+      1001 ids → validator error (`too_big`). Unknown ids → "None of the
+      selected records exist anymore". Duplicate ids are counted once.
+    - Bug found on the way: the table wrapped every header in a `<button>`,
+      disabled when the column can't sort. A disabled button swallows clicks
+      on its children, so the select-page checkbox did nothing. Only sortable
+      headers are buttons now.
 
 ## Notes
 

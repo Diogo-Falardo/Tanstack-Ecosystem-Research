@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 import type { ActionResult } from '#/lib/action-result'
 import type {
+  bulkSetMaintenanceRecordStatusSchema,
   createMaintenanceRecordSchema,
   listMaintenanceRecordsInputSchema,
   maintenanceRecordFormSchema,
@@ -27,6 +28,13 @@ export type ListMaintenanceRecordsResult = {
 }
 
 export type MaintenanceRecordResult = ActionResult<MaintenanceRecord>
+
+export type BulkSetMaintenanceRecordStatusInput = z.infer<
+  typeof bulkSetMaintenanceRecordStatusSchema
+>
+export type BulkSetMaintenanceRecordStatusResult = ActionResult<{
+  updated: number
+}>
 
 // Form values are the form schema's *input* (v1 infers form types from
 // defaultValues, not the schema). The output is the server payload.

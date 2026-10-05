@@ -1,10 +1,12 @@
 import { mutationOptions } from '@tanstack/react-query'
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
 import {
+  sfBulkSetMaintenanceRecordStatus,
   sfCreateMaintenanceRecord,
   sfUpdateMaintenanceRecord,
 } from './maintenance-records.function'
 import type {
+  BulkSetMaintenanceRecordStatusInput,
   CreateMaintenanceRecordInput,
   ListMaintenanceRecordsResult,
   MaintenanceRecord,
@@ -92,5 +94,17 @@ export const maintenanceRecordMutations = {
           return invalidateRecordViews(client)
         }
       },
+    }),
+
+  // Not optimistic: most selected rows usually sit on pages that aren't in
+  // the cache, so a patch would cover only some of them.
+  bulkSetStatus: () =>
+    mutationOptions({
+      mutationKey: ['maintenance-records', 'bulk-set-status'],
+      mutationFn: (data: BulkSetMaintenanceRecordStatusInput) =>
+        sfBulkSetMaintenanceRecordStatus({ data }),
+      // Returned so the mutation stays pending through the refetch.
+      onSettled: (_data, _error, _variables, _result, { client }) =>
+        invalidateRecordViews(client),
     }),
 }

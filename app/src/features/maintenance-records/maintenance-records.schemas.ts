@@ -32,15 +32,47 @@ export const updateMaintenanceRecordSchema = createMaintenanceRecordSchema
     id: selectMaintenanceRecordSchema.shape.id,
   })
 
-export const listMaintenanceRecordsInputSchema = z.object({
-  page: z.number().int().min(0).default(0),
-  pageSize: z.number().int().min(1).max(2000).default(500),
-  status: selectMaintenanceRecordSchema.shape.status.optional(),
-  assetId: z.number().int().positive().optional(),
-  // Bounded: this ends up inside a LIKE pattern on the server.
-  q: z.string().trim().min(1).max(100).optional(),
-  sortBy: z.enum(['status', 'performedAt', 'id']).optional(),
-  sortDir: z.enum(['asc', 'desc']).default('asc'),
+const MONTH_PARAM = /^\d{4}-(0[1-9]|1[0-2])$/
+
+export const listMaintenanceRecordsInputSchema = z
+  .object({
+    page: z.number().int().min(0).default(0),
+    pageSize: z.number().int().min(1).max(2000).default(500),
+    status: selectMaintenanceRecordSchema.shape.status.optional(),
+    assetId: z.number().int().positive().optional(),
+    // Bounded: this ends up inside a LIKE pattern on the server.
+    q: z.string().trim().min(1).max(100).optional(),
+    // Cents, like costCents. Viewers can't send these (sfListMaintenanceRecords).
+    costMin: z.number().int().nonnegative().max(100_000_000).optional(),
+    costMax: z.number().int().nonnegative().max(100_000_000).optional(),
+    // 'YYYY-MM', UTC months — the same buckets as the dashboard.
+    fromMonth: z.string().regex(MONTH_PARAM).optional(),
+    toMonth: z.string().regex(MONTH_PARAM).optional(),
+    sortBy: z.enum(['status', 'performedAt', 'id']).optional(),
+    sortDir: z.enum(['asc', 'desc']).default('asc'),
+  })
+  .refine(
+    (input) =>
+      input.costMin === undefined ||
+      input.costMax === undefined ||
+      input.costMin <= input.costMax,
+    { message: 'costMin must not exceed costMax', path: ['costMin'] },
+  )
+  .refine(
+    (input) =>
+      input.fromMonth === undefined ||
+      input.toMonth === undefined ||
+      input.fromMonth <= input.toMonth,
+    { message: 'fromMonth must not be after toMonth', path: ['fromMonth'] },
+  )
+
+// The selection store caps at this too; the server enforces it whatever the
+// client allowed.
+export const MAX_BULK_IDS = 1000
+
+export const bulkSetMaintenanceRecordStatusSchema = z.object({
+  ids: z.array(selectMaintenanceRecordSchema.shape.id).min(1).max(MAX_BULK_IDS),
+  status: selectMaintenanceRecordSchema.shape.status,
 })
 
 const DATE_INPUT = /^\d{4}-\d{2}-\d{2}$/

@@ -14,6 +14,8 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedDashboardRouteImport } from './routes/_authed/dashboard'
 import { Route as AuthedMaintenanceRecordsRouteRouteImport } from './routes/_authed/maintenance-records/route'
+import { Route as AuthedAssetsIndexRouteImport } from './routes/_authed/assets/index'
+import { Route as AuthedAssetsLiveRouteImport } from './routes/_authed/assets/live'
 import { Route as AuthedAssetsNewRouteImport } from './routes/_authed/assets/new'
 import { Route as AuthedMaintenanceRecordsIndexRouteImport } from './routes/_authed/maintenance-records/index'
 import { Route as AuthedMaintenanceRecordsNewRouteImport } from './routes/_authed/maintenance-records/new'
@@ -45,6 +47,16 @@ const AuthedMaintenanceRecordsRouteRoute =
     path: '/maintenance-records',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedAssetsIndexRoute = AuthedAssetsIndexRouteImport.update({
+  id: '/assets/',
+  path: '/assets/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedAssetsLiveRoute = AuthedAssetsLiveRouteImport.update({
+  id: '/assets/live',
+  path: '/assets/live',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedAssetsNewRoute = AuthedAssetsNewRouteImport.update({
   id: '/assets/new',
   path: '/assets/new',
@@ -79,8 +91,10 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/maintenance-records': typeof AuthedMaintenanceRecordsRouteRouteWithChildren
   '/dashboard': typeof AuthedDashboardRoute
+  '/assets/live': typeof AuthedAssetsLiveRoute
   '/assets/new': typeof AuthedAssetsNewRoute
   '/maintenance-records/new': typeof AuthedMaintenanceRecordsNewRoute
+  '/assets/': typeof AuthedAssetsIndexRoute
   '/maintenance-records/': typeof AuthedMaintenanceRecordsIndexRoute
   '/assets/$id/edit': typeof AuthedAssetsIdEditRoute
   '/maintenance-records/$id/edit': typeof AuthedMaintenanceRecordsIdEditRoute
@@ -89,8 +103,10 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/dashboard': typeof AuthedDashboardRoute
   '/': typeof AuthedIndexRoute
+  '/assets/live': typeof AuthedAssetsLiveRoute
   '/assets/new': typeof AuthedAssetsNewRoute
   '/maintenance-records/new': typeof AuthedMaintenanceRecordsNewRoute
+  '/assets': typeof AuthedAssetsIndexRoute
   '/maintenance-records': typeof AuthedMaintenanceRecordsIndexRoute
   '/assets/$id/edit': typeof AuthedAssetsIdEditRoute
   '/maintenance-records/$id/edit': typeof AuthedMaintenanceRecordsIdEditRoute
@@ -102,8 +118,10 @@ export interface FileRoutesById {
   '/_authed/maintenance-records': typeof AuthedMaintenanceRecordsRouteRouteWithChildren
   '/_authed/dashboard': typeof AuthedDashboardRoute
   '/_authed/': typeof AuthedIndexRoute
+  '/_authed/assets/live': typeof AuthedAssetsLiveRoute
   '/_authed/assets/new': typeof AuthedAssetsNewRoute
   '/_authed/maintenance-records/new': typeof AuthedMaintenanceRecordsNewRoute
+  '/_authed/assets/': typeof AuthedAssetsIndexRoute
   '/_authed/maintenance-records/': typeof AuthedMaintenanceRecordsIndexRoute
   '/_authed/assets/$id/edit': typeof AuthedAssetsIdEditRoute
   '/_authed/maintenance-records/$id/edit': typeof AuthedMaintenanceRecordsIdEditRoute
@@ -115,8 +133,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/maintenance-records'
     | '/dashboard'
+    | '/assets/live'
     | '/assets/new'
     | '/maintenance-records/new'
+    | '/assets/'
     | '/maintenance-records/'
     | '/assets/$id/edit'
     | '/maintenance-records/$id/edit'
@@ -125,8 +145,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/dashboard'
     | '/'
+    | '/assets/live'
     | '/assets/new'
     | '/maintenance-records/new'
+    | '/assets'
     | '/maintenance-records'
     | '/assets/$id/edit'
     | '/maintenance-records/$id/edit'
@@ -137,8 +159,10 @@ export interface FileRouteTypes {
     | '/_authed/maintenance-records'
     | '/_authed/dashboard'
     | '/_authed/'
+    | '/_authed/assets/live'
     | '/_authed/assets/new'
     | '/_authed/maintenance-records/new'
+    | '/_authed/assets/'
     | '/_authed/maintenance-records/'
     | '/_authed/assets/$id/edit'
     | '/_authed/maintenance-records/$id/edit'
@@ -184,6 +208,20 @@ declare module '@tanstack/react-router' {
       path: '/maintenance-records'
       fullPath: '/maintenance-records'
       preLoaderRoute: typeof AuthedMaintenanceRecordsRouteRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/assets/': {
+      id: '/_authed/assets/'
+      path: '/assets'
+      fullPath: '/assets/'
+      preLoaderRoute: typeof AuthedAssetsIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/assets/live': {
+      id: '/_authed/assets/live'
+      path: '/assets/live'
+      fullPath: '/assets/live'
+      preLoaderRoute: typeof AuthedAssetsLiveRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/assets/new': {
@@ -246,7 +284,9 @@ interface AuthedRouteChildren {
   AuthedMaintenanceRecordsRouteRoute: typeof AuthedMaintenanceRecordsRouteRouteWithChildren
   AuthedDashboardRoute: typeof AuthedDashboardRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
+  AuthedAssetsLiveRoute: typeof AuthedAssetsLiveRoute
   AuthedAssetsNewRoute: typeof AuthedAssetsNewRoute
+  AuthedAssetsIndexRoute: typeof AuthedAssetsIndexRoute
   AuthedAssetsIdEditRoute: typeof AuthedAssetsIdEditRoute
 }
 
@@ -255,7 +295,9 @@ const AuthedRouteChildren: AuthedRouteChildren = {
     AuthedMaintenanceRecordsRouteRouteWithChildren,
   AuthedDashboardRoute: AuthedDashboardRoute,
   AuthedIndexRoute: AuthedIndexRoute,
+  AuthedAssetsLiveRoute: AuthedAssetsLiveRoute,
   AuthedAssetsNewRoute: AuthedAssetsNewRoute,
+  AuthedAssetsIndexRoute: AuthedAssetsIndexRoute,
   AuthedAssetsIdEditRoute: AuthedAssetsIdEditRoute,
 }
 

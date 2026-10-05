@@ -107,6 +107,53 @@ you can explain the perf/security lesson it was meant to teach.
   Tools: TanStack DB
   Swap one high-churn view (e.g. live asset status) from manual refetching
   to a synced reactive collection. Compare against the Query version.
+  - 2026-10-05: asset status board built twice over one server function
+    (`sfListAssetBoard`, all 500 assets, capped at 1000): `/assets` uses Query
+    with `refetchInterval` and an optimistic `setStatus` mutation. `/assets/live`
+    uses a TanStack DB query collection (`@tanstack/react-db` 0.5.3,
+    `query-db-collection` 1.3.4) with live queries for rows and status counts.
+    Both write through the existing admin-only `sfUpdateAsset`. Measured in
+    headless Chromium against the dev server:
+    - Both poll every 5 s: 6 board requests per 30 s idle on either page. One
+      response is ~100 KB (seroval-encoded) and takes ~11 ms median over HTTP.
+      The collection stops polling once its page unmounts.
+    - Tab A to tab B latency is the same for both: 2.8–4.7 s over 6 samples
+      each, bounded by the poll interval. A query collection has no server
+      push, so "live" only means one reactive store per tab. Cross-tab push
+      would need Electric/PowerSync.
+    - Same tab: both views drop the changed row from a filtered "broken" view
+      and decrement the chip within one animation frame. At 500 rows the
+      `useMemo` filter/count is not visibly slower than the incremental live query.
+    - Rollback: demoting the admin to technician mid-session made
+      `sfUpdateAsset` return 403. Both versions showed the optimistic value,
+      then restored the old status and showed "Forbidden". The DB row never
+      changed.
+    - Code: the Query version needs ~33 lines of hand-written optimism
+      (cancel, snapshot, patch, restore on throw *and* on `!ok`, skip refetch
+      while siblings are in flight) plus `useMutationState` for pending rows.
+      The DB version's `onUpdate` is 12 lines: throw to roll back, and refetch
+      is automatic. Pending rows come free from `$hasPendingWrites`. The
+      saving is offset by ~30 lines of collection plumbing (a factory memoized
+      per `QueryClient`, plus cleanup).
+    Surprises:
+    - No SSR. The route must be `ssr: false`, so the board is a 6 KB empty
+      page until the client fetches. The Query version server-renders all 500
+      rows (~320 KB HTML including the dehydrated cache).
+    - `queryClient.clear()` doesn't empty a collection, because it has its
+      own store. Login calls `collection.cleanup()`. Logout doesn't: the
+      mutation's `onSuccess` runs before the logout button navigates away,
+      and cleaning up under a mounted `/assets/live` logged a "source
+      collection was manually cleaned up" Live Query Error for each live
+      query. One leftover poll after logout gets a 401, then polling stops.
+    - Spreading `queryOptions()` into a collection is not equivalent: the
+      collection's `select` extracts rows, which is not Query's observer
+      `select`, and `placeholderData` is unsupported.
+    Verdict: for a small, bounded, frequently edited set, DB removes the
+    optimistic bookkeeping and gives incrementally maintained filters and
+    counts. It does not make data arrive from other users any faster. It
+    doesn't fit the 80k maintenance records: eager mode downloads everything,
+    and on-demand mode would mean translating `parseLoadSubsetOptions` back
+    into the SQL `MaintenanceRecords.list()` already builds.
 
 - [ ] **Phase 11 — (as needed) Store, Ranger**
   Add only when a concrete need shows up — e.g. Store for multi-select state

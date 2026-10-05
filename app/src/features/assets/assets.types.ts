@@ -22,4 +22,11 @@ export type AssetResult = ActionResult<Asset>
 
 export type AssetOption = { id: number; name: string }
 
+export type AssetStatus = Asset['status']
+
+export type AssetBoardRow = Pick<
+  Asset,
+  'id' | 'name' | 'category' | 'location' | 'status'
+>
+
 export type AssetFormValues = z.input<typeof assetFormSchema>

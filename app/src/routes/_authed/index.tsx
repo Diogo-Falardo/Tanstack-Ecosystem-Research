@@ -40,6 +40,16 @@ const ROUTE_MAP: Array<{ path: string; note: string; roles: Role[] }> = [
     note: 'Edit, in the drawer',
     roles: STAFF,
   },
+  {
+    path: '/assets',
+    note: 'Asset status board, Query polling',
+    roles: ALL_ROLES,
+  },
+  {
+    path: '/assets/live',
+    note: 'Asset status board, TanStack DB',
+    roles: ALL_ROLES,
+  },
   { path: '/dashboard', note: 'Cost dashboard', roles: ADMIN },
   { path: '/assets/new', note: 'Create asset', roles: ADMIN },
   { path: '/assets/$id/edit', note: 'Edit asset', roles: ADMIN },
@@ -68,7 +78,7 @@ function Home() {
       <div className="mt-10 grid gap-6 md:grid-cols-5">
         <section
           aria-labelledby="records-heading"
-          className={`home-rise rounded-xl border border-neutral-200 bg-white p-6 shadow-sm ${admin ? 'md:col-span-3' : 'md:col-span-5'}`}
+          className="home-rise rounded-xl border border-neutral-200 bg-white p-6 shadow-sm md:col-span-3"
           style={{ animationDelay: '60ms' }}
         >
           <h2
@@ -124,39 +134,53 @@ function Home() {
           )}
         </section>
 
-        {admin && (
-          <section
-            aria-labelledby="assets-heading"
-            className="home-rise flex flex-col rounded-xl border border-neutral-200 bg-white p-6 shadow-sm md:col-span-2"
-            style={{ animationDelay: '120ms' }}
+        <section
+          aria-labelledby="assets-heading"
+          className="home-rise flex flex-col rounded-xl border border-neutral-200 bg-white p-6 shadow-sm md:col-span-2"
+          style={{ animationDelay: '120ms' }}
+        >
+          <h2
+            id="assets-heading"
+            className="text-lg font-semibold text-neutral-900"
           >
-            <h2
-              id="assets-heading"
-              className="text-lg font-semibold text-neutral-900"
-            >
-              Assets
-            </h2>
-            <p className="mt-1 text-sm text-neutral-600">
-              The equipment records attach to. There's no list page yet, so open
-              one by ID.
-            </p>
+            Assets
+          </h2>
+          <p className="mt-1 text-sm text-neutral-600">
+            The equipment records attach to. The status board comes in two
+            versions, TanStack Query and TanStack DB, for comparison.
+          </p>
 
-            <div className="mt-5">
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link
+              to="/assets"
+              className="inline-flex min-h-11 items-center rounded-lg bg-neutral-900 px-4 font-medium text-white transition hover:bg-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 active:scale-[0.98]"
+            >
+              Status board
+            </Link>
+            <Link
+              to="/assets/live"
+              className="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 px-4 font-medium text-neutral-900 transition hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 active:scale-[0.98]"
+            >
+              Live board (DB)
+            </Link>
+            {admin && (
               <Link
                 to="/assets/new"
                 className="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 px-4 font-medium text-neutral-900 transition hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 active:scale-[0.98]"
               >
                 New asset
               </Link>
-            </div>
+            )}
+          </div>
 
+          {admin && (
             <OpenById
               label="Edit asset by ID"
               inputId="asset-id"
               to="/assets/$id/edit"
             />
-          </section>
-        )}
+          )}
+        </section>
       </div>
 
       <section

@@ -14,7 +14,7 @@ matters is the data shape: lots of rows, aggregations and user roles.
 3. Every server function validates its input with Zod and checks authorization itself.
 4. Aggregation (sums, counts, group-by) happens in SQL, not in JavaScript.
 
-**Progress:** Phases 1–9 of [`ROADMAP.md`](ROADMAP.md) are built:
+**Progress:** Phases 1–10 of [`ROADMAP.md`](ROADMAP.md) are built:
 
 | Phase | What it added | Tool |
 | --- | --- | --- |
@@ -27,8 +27,9 @@ matters is the data shape: lots of rows, aggregations and user roles.
 | 7 | Every filter in the URL, debounced free-text search | Router, Pacer |
 | 8 | Cost dashboard, every number a SQL `GROUP BY` | Query, Drizzle |
 | 9 | Login, roles, route guards + server-function guards, cost hidden from viewers | Start middleware |
+| 10 | Asset status board built twice, Query polling vs a reactive collection | Query, DB |
 
-The next phase is 10 (TanStack DB).
+Phase 11 (Store, Ranger) is added only when a concrete need shows up.
 
 ## Stack
 
@@ -41,6 +42,7 @@ The next phase is 10 (TanStack DB).
 | Virtualization | `@tanstack/react-virtual` `^3.14.13` |
 | Forms | `@tanstack/react-form` `1.33.5` (pinned exactly) |
 | Debouncing | `@tanstack/react-pacer` `^0.24.1` |
+| Reactive collections | `@tanstack/react-db` `^0.5.3`, `@tanstack/query-db-collection` `^1.3.4` |
 | Data | SQLite via `better-sqlite3` + `drizzle-orm` / `drizzle-kit` |
 | Validation | `zod` `^4`, `drizzle-zod` |
 | Styling | Tailwind CSS 4 |
@@ -77,17 +79,18 @@ users out everywhere.
 
 | Email | Role | Can |
 | --- | --- | --- |
-| `admin@example.com` | admin | Everything: records with costs, create/edit records, create/edit assets, `/dashboard` |
-| `tech@example.com` | technician | Records with costs, create/edit records. No assets pages, no dashboard |
-| `viewer@example.com` | viewer | Read the records list only. Cost comes back as `null` and the Cost column is hidden |
+| `admin@example.com` | admin | Everything: records with costs, create/edit records, create/edit assets, change asset status on the boards, `/dashboard` |
+| `tech@example.com` | technician | Records with costs, create/edit records, read-only asset boards. No asset forms, no dashboard |
+| `viewer@example.com` | viewer | Read the records list and the asset boards. Cost comes back as `null` and the Cost column is hidden |
 
 There is no sign-up or user-management screen. To add a user or change a
 role, edit the `users` table (e.g. `bun run db:studio`) or `scripts/seed-users.ts`.
 A role change takes effect on the user's next request, with no re-login.
 
 After login, the home page links to every screen your role can open: the
-records list (with preset views such as "Completed" or "Newest first"), new
-record, new asset, and edit-by-ID for records and assets. The top bar shows
+records list (with preset views such as "Completed" or "Newest first"), the
+two asset status boards, new record, new asset, and edit-by-ID for records
+and assets. The top bar shows
 the links for your role, your name and role, and a **Log out** button.
 Logging out signs that user out on every device.
 
@@ -130,7 +133,7 @@ app/
     │   └── schema.ts        # tables (users, assets, maintenance_records), indexes, relations
     ├── components/form/     # TanStack Form field kit (useAppForm, fields, alert, submit)
     ├── features/
-    │   ├── assets/          # + asset-form.tsx
+    │   ├── assets/          # + asset-form.tsx, asset-status-board.tsx, assets.collection.ts (TanStack DB)
     │   ├── auth/            # login/logout/current user + login-form.tsx
     │   ├── dashboard/       # read-only aggregates: no mutations, no form
     │   └── maintenance-records/   # + maintenance-record-form.tsx
@@ -148,9 +151,11 @@ app/
     │   └── _authed/               # everything below requires a login
     │       ├── index.tsx              # / home: links to every route your role can open
     │       ├── dashboard.tsx          # /dashboard (admin): cost charts and breakdowns
-    │       ├── assets/                # (admin)
-    │       │   ├── new.tsx            # /assets/new
-    │       │   └── $id.edit.tsx       # /assets/$id/edit
+    │       ├── assets/
+    │       │   ├── index.tsx          # /assets: status board, Query version
+    │       │   ├── live.tsx           # /assets/live: status board, TanStack DB version (no SSR)
+    │       │   ├── new.tsx            # /assets/new (admin)
+    │       │   └── $id.edit.tsx       # /assets/$id/edit (admin)
     │       └── maintenance-records/
     │           ├── route.tsx          # list (layout) + drawer <Outlet/>
     │           ├── index.tsx          # empty: drawer closed
@@ -175,10 +180,12 @@ Each feature uses the same file split. Using `maintenance-records` as the exampl
 | `*.queries.ts` | `queryOptions` factories that call the server functions (`list`, `detail`, asset `options`) |
 | `*.mutations.ts` | `mutationOptions` factories: cache work (optimistic patch, rollback, invalidation) |
 | `*-form.tsx` | The feature form, built from the shared field kit |
+| `*.collection.ts` | `assets` only: the TanStack DB collection factory, which calls the same server functions |
 
 `dashboard` only reads data, so it has just `schemas`, `types`, `server`,
 `function` and `queries`. `auth` has no `list`/`get`: its server class is
-`verifyCredentials`, `getSessionUser` and `revokeSessions`.
+`verifyCredentials`, `getSessionUser` and `revokeSessions`. `assets` adds a
+`*.collection.ts` for the Phase 10 comparison.
 
 Imports use the `#/*` alias, which maps to `app/src/*` (the `imports` field in
 `app/package.json`), e.g. `import { db } from '#/db'`.
@@ -807,7 +814,8 @@ which issues a fresh session id. `sfLogout` bumps `users.session_version`, so
 every copy of that user's cookie, on any device, stops working. Both
 mutations call `queryClient.clear()` on success. The browser keeps one
 `QueryClient` for the whole tab, so without that the previous user's cached
-rows (with costs) could render for the next user.
+rows (with costs) could render for the next user. Login also cleans up the
+TanStack DB assets collection, which keeps its own store (see section 11).
 
 **Route guards.** The root route's `beforeLoad` loads the current user
 (`authQueries.me()`, 5-minute `staleTime`) into the router context. Then:
@@ -821,7 +829,7 @@ rows (with costs) could render for the next user.
 | Route | Who |
 | --- | --- |
 | `/login` | anyone |
-| `/`, `/maintenance-records` | any logged-in user |
+| `/`, `/maintenance-records`, `/assets`, `/assets/live` | any logged-in user |
 | `/maintenance-records/new`, `/maintenance-records/$id/edit` | admin, technician |
 | `/dashboard`, `/assets/new`, `/assets/$id/edit` | admin |
 
@@ -856,6 +864,68 @@ export const startInstance = createStart(() => ({
 
 The role checks, revocation and timings are noted under Phase 9 in
 [`ROADMAP.md`](ROADMAP.md).
+
+### 11. TanStack DB (live asset status board)
+
+Phase 10 builds one frequently edited view twice to see what a reactive
+collection adds over plain Query. Both boards list every asset with status
+count chips (click one to filter) and, for admins, a status `<select>` per
+row. They render the same `asset-status-board.tsx` and differ only in the
+data layer:
+
+| | `/assets` (Query) | `/assets/live` (TanStack DB) |
+| --- | --- | --- |
+| Read | `useSuspenseQuery(assetQueries.board())`, `refetchInterval: 5_000` | eager query collection, `refetchInterval: 5_000`, read through `useLiveQuery` |
+| Filter + counts | `useMemo` over the array | live queries: `where` + `orderBy`, and `groupBy(status)` + `count()` |
+| Status change | `assetMutations.setStatus()`: hand-written snapshot, patch, restore | `collection.update(id, draft => …)`; `onUpdate` calls `sfUpdateAsset` |
+| Pending rows | `useMutationState` on `['assets', 'set-status']` | the row's `$hasPendingWrites` |
+| SSR | yes, all rows server-rendered | no, `ssr: false` (TanStack DB is client-only) |
+
+Both read `sfListAssetBoard` (any role), which returns `id, name, category,
+location, status` for every asset, capped at 1000. Filtering and counting
+that array in the browser is a deliberate exception to ground rules 2 and 4.
+It's fine for 500 assets and wouldn't be for the 80k records. Writes still go
+through the admin-only `sfUpdateAsset`, so the server checks the role either way.
+
+The collection is created once per `QueryClient` and shares its cache:
+
+`app/src/features/assets/assets.collection.ts`
+```ts
+queryCollectionOptions({
+  id: 'assets-board',
+  queryKey: ['assets', 'board', 'collection'],
+  queryFn: () => sfListAssetBoard(),
+  queryClient,
+  getKey: (row) => row.id,
+  refetchInterval: 5_000,
+  onUpdate: async ({ transaction }) => {
+    // calls sfUpdateAsset per mutation; throws on a failed result
+  },
+})
+```
+
+Throwing from `onUpdate` rolls the optimistic change back. Resolving triggers
+an automatic refetch. The key starts with `'assets'`, so the asset form's
+`invalidateQueries({ queryKey: ['assets'] })` refreshes the collection too.
+
+**What the comparison showed** (headless Chromium against the dev server,
+details under Phase 10 in [`ROADMAP.md`](ROADMAP.md)):
+
+- Changes from another tab arrive in 2.8–4.7 s on **both** boards. A query
+  collection still polls and gets no server push.
+- In the same tab, both update the row and the count chip within one frame.
+  Both roll back and show "Forbidden" when `sfUpdateAsset` returns 403.
+- The DB version replaces ~33 lines of optimistic bookkeeping with a 12-line
+  `onUpdate`. It then adds ~30 lines of collection setup and cleanup.
+
+**Gotchas:**
+
+- `queryClient.clear()` doesn't empty a collection. Login calls
+  `cleanupAssetsCollection()`. Logout doesn't, because it runs while
+  `/assets/live` may still be mounted, and cleaning up under live queries logs
+  a Live Query Error.
+- A collection's `select` extracts rows. It isn't Query's observer `select`,
+  and `placeholderData` isn't supported.
 
 ## How it fits together
 
@@ -907,7 +977,6 @@ Saving an edit in the drawer (`/maintenance-records/42/edit`):
 
 ## Not used yet
 
-- **TanStack DB:** a synced reactive collection compared against the Query version (Phase 10).
 - **TanStack Store / Ranger:** cross-page selection state and range filters, added only if needed (Phase 11).
 
 ## Further reading
@@ -922,4 +991,5 @@ Saving an edit in the drawer (`/maintenance-records/42/edit`):
   [Virtual](https://tanstack.com/virtual/latest) ·
   [Form](https://tanstack.com/form/latest) ·
   [Pacer](https://tanstack.com/pacer/latest) ·
+  [DB](https://tanstack.com/db/latest) ·
   [Drizzle](https://orm.drizzle.team/docs/overview)

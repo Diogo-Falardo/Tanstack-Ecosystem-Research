@@ -22,6 +22,12 @@ export const sfListAssetOptions = createServerFn({ method: 'GET' })
   .middleware([anyRole])
   .handler(async () => Assets.options())
 
+// No sensitive fields, so every role may read the board; writes still go
+// through sfUpdateAsset (admin only).
+export const sfListAssetBoard = createServerFn({ method: 'GET' })
+  .middleware([anyRole])
+  .handler(async () => Assets.board())
+
 export const sfCreateAsset = createServerFn({ method: 'POST' })
   .middleware([adminOnly])
   .validator(createAssetSchema)

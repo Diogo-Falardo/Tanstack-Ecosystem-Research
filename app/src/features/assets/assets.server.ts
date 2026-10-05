@@ -5,6 +5,7 @@ import { fail, ok } from '#/lib/action-result'
 import { selectAssetSchema } from './assets.schemas'
 import type {
   Asset,
+  AssetBoardRow,
   AssetOption,
   AssetResult,
   CreateAssetInput,
@@ -49,6 +50,23 @@ export class Assets {
   static async options(): Promise<AssetOption[]> {
     return db
       .select({ id: assets.id, name: assets.name })
+      .from(assets)
+      .orderBy(asc(assets.name))
+      .limit(1000)
+  }
+
+  // Every asset for the status board, which keeps the whole set in a client
+  // store (Query cache or a TanStack DB collection) and filters/counts there.
+  // The cap is what makes that acceptable: at most 1000 small rows, ever.
+  static async board(): Promise<AssetBoardRow[]> {
+    return db
+      .select({
+        id: assets.id,
+        name: assets.name,
+        category: assets.category,
+        location: assets.location,
+        status: assets.status,
+      })
       .from(assets)
       .orderBy(asc(assets.name))
       .limit(1000)
